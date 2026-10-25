@@ -1,0 +1,55 @@
+name: Bootstrap Instant Downloader RC7 distribution
+on:
+  push:
+    paths:
+      - '.github/workflows/bootstrap-rc7.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download and validate code-only RC7 ZIP
+        env:
+          SOURCE_URL: 'https://uc4a130252c55e92adc73ce06352.dl.dropboxusercontent.com/cd/0/get/DKv_EJBeN9qma4VlNiJJrsOcMJujLe00-caegURa57H8ORSL38J6SRwXaybgM9GStLr18T3JjHYlUCOb8zTzTUjL4f1Je4I8RpxhldKEueQel7UwbprdQ546Tq0Us77NFztNR8v1mlBXq46Ws00ophU2rXb2tQKDuNrrpaixyrO9pQ/file?c_luid=09091650'
+          EXPECTED_SHA256: 'bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'
+        run: |
+          set -euo pipefail
+          mkdir -p releases
+          curl --fail --silent --show-error --location --max-time 90 --output releases/Instant_Downloader_v1.8_RC7_code_only.zip "$SOURCE_URL"
+          echo "$EXPECTED_SHA256  releases/Instant_Downloader_v1.8_RC7_code_only.zip" | sha256sum --check -
+          python - <<'PY'
+          import zipfile, json
+          path='releases/Instant_Downloader_v1.8_RC7_code_only.zip'
+          with zipfile.ZipFile(path) as z:
+              assert z.testzip() is None, 'ZIP integrity failed'
+              names=z.namelist()
+              assert 'package.json' in names, 'Missing package.json'
+              pkg=json.loads(z.read('package.json'))
+              assert pkg['version']=='1.8.0-rc.7', 'Wrong package version'
+              assert all('.auth' not in x and 'cookies' not in x.lower() and 'config.json' not in x.lower() for x in names), 'Sensitive data in package'
+          PY
+      - name: Publish package and manifest
+        env:
+          EXPECTED_SHA256: 'bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          data={
+            "version":"1.8.0-rc.7",
+            "channel":"rc",
+            "sha256":os.environ["EXPECTED_SHA256"],
+            "package_url":"https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip",
+            "notes":"RC7 preview: in-app Updates page, Back navigation, English/Romanian text fixes. This is not a stable production release."
+          }
+          with open("latest.json","w",encoding="utf-8") as f:
+              json.dump(data,f,ensure_ascii=False,indent=2)
+              f.write("\n")
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add releases/Instant_Downloader_v1.8_RC7_code_only.zip latest.json
+          git diff --cached --quiet || { git commit -m 'Publish RC7 preview package and manifest'; git push; }
