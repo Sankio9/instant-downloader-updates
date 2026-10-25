@@ -1,15 +1,27 @@
-# Instant Downloader — Updates
+# Instant Downloader — Official Update Feed
 
-Public download channel for Instant Downloader. Development sources are maintained in a separate private repository.
+This public repository distributes **code-only update packages** for Instant Downloader. Development sources remain in the separate private repository `Sankio9/instant-downloader`.
 
-The initial release channel is **Preview (RC)**. A stable release will be published only after full Windows GUI, login, download, pause/resume and update tests.
+## Preview (RC) channel — active
 
-## Update feeds
+- [Update manifest](https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/latest.json)
+- [Current ZIP package](https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip)
+- Current published version: **1.8.0-rc.7** (preview, not stable).
+- The manifest contains an SHA-256 digest, verified against the uploaded package by the release workflow.
 
-- `latest.json`: Preview update manifest.
-- `releases/`: Code-only update ZIP files.
-- `stable.json`: Reserved for verified stable releases (not yet active).
+## First activation on older installations
 
-**Security:** Do not upload browser sessions, cookies, personal settings, video archives or access tokens here. Update packages must be HTTPS-accessible without authentication, with integrity checks.
+RC5–RC7 were shipped before the HTTPS feed was configured. Their local `config.json` must receive these two settings **once** (preserve all other configuration keys):
 
-Source code: private repo `Sankio9/instant-downloader`.
+```json
+{
+  "updateManifestSource": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/latest.json",
+  "updateChannel": "rc"
+}
+```
+
+After this activation, use **Instant Downloader → Updates → Check for updates → Install update** for a *newer* preview release. If RC7 is already installed and latest.json advertises RC7, the application should display “up to date.”
+
+## Safety
+
+Never upload Skool sessions, cookies, user configs, archived lessons, videos or personal information to the update repository. A public update channel is required because the app must fetch releases over HTTPS without GitHub account tokens. Release files are code-only. Stable releases must pass real Windows install and download testing.
