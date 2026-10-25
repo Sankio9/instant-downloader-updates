@@ -1,0 +1,7 @@
+{
+  "version": "1.8.0-rc.7",
+  "channel": "rc",
+  "sha256": "bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9",
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip",
+  "notes": "RC7 preview: in-app Updates page, Back navigation, English/Romanian text fixes. This is not a stable production release."
+}
