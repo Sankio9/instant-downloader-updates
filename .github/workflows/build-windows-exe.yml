@@ -1,0 +1,150 @@
+name: Build and test Instant Downloader Windows EXE
+on:
+  push:
+    paths:
+      - .github/workflows/build-windows-exe.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download verified app and installer sources
+        id: src
+        shell: pwsh
+        env:
+          SCRIPT_SOURCE_URL: 'https://uccec5931fc75c950e3f3810343c.dl.dropboxusercontent.com/cd/0/get/DKvlBZUWeNaj4hJkriH7cTmrs_3ThBTeejjfOSKa7M6B1iGDBqdY2Qz-_q52759lRw6WkJKhEWzptgtQc936SkHswomLH1uZlHbM39-wdqnLi2OaKwCnaT9gYRHxsclutruCq07sHjIxpv2S_0bNb2iE387gsnl5TdK-IwWYRjPNqw/file?c_luid=09091650'
+        run: |
+          $ErrorActionPreference='Stop'
+          New-Item -ItemType Directory -Force -Path package | Out-Null
+          curl.exe -fLsS --retry 2 --output app.zip 'https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip'
+          if($LASTEXITCODE -ne 0){throw 'Cannot download app source'}
+          if((Get-FileHash app.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'){throw 'Application ZIP SHA256 mismatch'}
+          curl.exe -fLsS --retry 2 --output build_scripts.zip "$env:SCRIPT_SOURCE_URL"
+          if($LASTEXITCODE -ne 0){throw 'Cannot download installer scripts'}
+          if((Get-FileHash build_scripts.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne '7381106297db2b77d471cb957ea6ab5d75a98611575307849f9afbe62b249df5'){throw 'Installer scripts ZIP SHA256 mismatch'}
+          Expand-Archive -LiteralPath app.zip -DestinationPath package -Force
+          Expand-Archive -LiteralPath build_scripts.zip -DestinationPath . -Force
+          $file='package\supervisor.cjs'
+          $source=[IO.File]::ReadAllText($file)
+          $before='env: {...process.env,'
+          $after="env: {...process.env, PATH: path.join(root,'node_modules','ffmpeg-static')+path.delimiter+(process.env.PATH||''),"
+          if(!$source.Contains($before)){throw 'Expected supervisor runtime code not present'}
+          $source=$source.Replace($before,$after)
+          [IO.File]::WriteAllText($file,$source,[Text.UTF8Encoding]::new($false))
+          $files=(Get-ChildItem package -File).Name
+          foreach($name in @('bridge.mjs','supervisor.cjs','Instant_Downloader.ps1','Update_Instant_Downloader.ps1','patch_progress.cjs','package.json')){if($name -notin $files){throw "Missing $name"}}
+      - name: Parse all Windows PowerShell files
+        id: parse
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($f in @(Get-ChildItem package -Filter '*.ps1') + @(Get-Item Bootstrap_Runtime.ps1)){
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($f.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count -gt 0){$errors | ForEach-Object{Write-Host $_};throw "Syntax error: $($f.Name)"}
+          }
+          Write-Host 'All PowerShell files parsed.'
+      - name: Run JavaScript regression tests
+        id: tests
+        shell: pwsh
+        working-directory: package
+        run: |
+          npm install --no-save --ignore-scripts --no-audit --no-fund typescript@5.9.3
+          if($LASTEXITCODE -ne 0){throw 'npm test deps failed'}
+          foreach($f in @('test_local.cjs','test_v16.cjs','test_v17.cjs','test_audit.cjs','test_upgrade.cjs')){
+            node $f
+            if($LASTEXITCODE -ne 0){throw "$f failed"}
+          }
+      - name: Install Inno Setup compiler
+        id: compiler
+        shell: pwsh
+        run: |
+          if(!(Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')){
+            choco install innosetup -y --no-progress
+            if($LASTEXITCODE -ne 0){throw 'Inno Setup install failed'}
+          }
+      - name: Compile genuine Windows EXE installer
+        id: exe
+        shell: pwsh
+        run: |
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' '/Qp' 'InstantDownloader.iss'
+          if($LASTEXITCODE -ne 0){throw 'Inno Setup compilation failed'}
+          $exe='dist\Instant_Downloader_Setup_v1.8_RC7_x64.exe'
+          if(!(Test-Path $exe)){throw 'Missing installer executable'}
+          Write-Host "EXE bytes: $((Get-Item $exe).Length)"
+      - name: Silent install and uninstall smoke test (no network dependencies)
+        id: smoke
+        shell: pwsh
+        run: |
+          $appRoot=Join-Path $env:RUNNER_TEMP 'InstantDownloaderPC2Smoke'
+          $exe=Join-Path $PWD 'dist\Instant_Downloader_Setup_v1.8_RC7_x64.exe'
+          $p=Start-Process -FilePath $exe -ArgumentList @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART',('/DIR="'+$appRoot+'"'),'/CI_SKIP_RUNTIME=1') -PassThru -Wait
+          if($p.ExitCode -ne 0){throw "Silent setup exit $($p.ExitCode)"}
+          foreach($item in @('Instant_Downloader.ps1','bridge.mjs','Bootstrap_Runtime.ps1','unins000.exe')){
+            if(!(Test-Path (Join-Path $appRoot $item))){throw "Missing installed $item"}
+          }
+          $cfg=Join-Path $appRoot 'config.json'
+          if(Test-Path $cfg){throw 'CI smoke must not produce a deceptive ready config'}
+          $uninstall=Join-Path $appRoot 'unins000.exe'
+          $p=Start-Process -FilePath $uninstall -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait -PassThru
+          if($p.ExitCode -ne 0){throw "Uninstaller returned $($p.ExitCode)"}
+      - name: Full runtime integration on Windows runner
+        id: runtime
+        shell: powershell
+        timeout-minutes: 28
+        run: |
+          $ErrorActionPreference='Stop'
+          $app=Join-Path $env:RUNNER_TEMP 'InstantRuntimeQA'
+          $tmp=Join-Path $env:RUNNER_TEMP 'InstantRuntimeTemp'
+          $archive=Join-Path $env:RUNNER_TEMP 'InstantRuntimeArchive'
+          Copy-Item -LiteralPath (Resolve-Path '.\package') -Destination $app -Recurse -Force
+          & '.\Bootstrap_Runtime.ps1' -AppRoot $app -TempRoot $tmp -ArchiveRoot $archive
+          if($LASTEXITCODE -ne 0){throw 'Full runtime setup failed. See Runtime QA logs'}
+          $c=Get-Content (Join-Path $app 'config.json') -Raw | ConvertFrom-Json
+          if($c.version -ne '1.8.0-rc.7' -or !(Test-Path $c.nodePath)){throw 'Installed configuration invalid'}
+          if(!(Test-Path (Join-Path $app 'node_modules\.bin\playwright.cmd'))){throw 'Playwright missing'}
+          if(!(Test-Path (Join-Path $app 'node_modules\skool-downloader\src\index.ts'))){throw 'Skool engine missing'}
+      - name: Publish verified PC2 preview EXE release
+        id: release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.8.0-rc.7-windows-installer'
+          $asset='dist\Instant_Downloader_Setup_v1.8_RC7_x64.exe'
+          $hash=(Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          $content=@{sha256=$hash;name='Instant_Downloader_Setup_v1.8_RC7_x64.exe';note='Windows CI tested, PC2 interactive Skool login/download not yet verified'}
+          $content|ConvertTo-Json|Out-File 'dist\INSTALLER_SHA256.json' -Encoding utf8
+          gh release create $tag $asset 'dist\INSTALLER_SHA256.json' --title 'Instant Downloader Windows installer RC7 (PC2 test)' --notes 'EXE built with Inno Setup and tested on GitHub Windows runner: PowerShell syntax, Node regressions, silent installer/uninstaller, Node/Playwright/FFmpeg/yt-dlp provisioning. PC2 Skool login and real course downloads still require user testing. This is NOT a bug-free final release.' --prerelease --target main
+          if($LASTEXITCODE -ne 0){throw 'GitHub release publication failed'}
+      - name: Record validation outcome for retrieval
+        if: always()
+        shell: pwsh
+        run: |
+          $content=@"
+          # Instant Downloader Windows EXE validation
+          Download/source verification: ${{ steps.src.outcome }}
+          PowerShell parsing: ${{ steps.parse.outcome }}
+          Node regression tests: ${{ steps.tests.outcome }}
+          Inno compiler: ${{ steps.compiler.outcome }}
+          EXE compile: ${{ steps.exe.outcome }}
+          Setup/uninstall smoke: ${{ steps.smoke.outcome }}
+          Runtime installation: ${{ steps.runtime.outcome }}
+          Release upload: ${{ steps.release.outcome }}
+          "@
+          [IO.File]::WriteAllText((Join-Path $PWD 'PC2_WINDOWS_EXE_QA.md'),$content,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add PC2_WINDOWS_EXE_QA.md
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Record Windows PC2 installer QA'
+            git push
+          }
