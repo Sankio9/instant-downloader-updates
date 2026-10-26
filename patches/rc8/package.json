@@ -1,0 +1,13 @@
+{
+  "name": "instant-downloader",
+  "version": "1.8.0-rc.8",
+  "private": true,
+  "description": "Instant Downloader Windows - Skool archive module (beta)",
+  "dependencies": {
+    "skool-downloader": "1.0.0",
+    "tsx": "4.21.0"
+  },
+  "allowScripts": {
+    "esbuild@0.27.7": true
+  }
+}
