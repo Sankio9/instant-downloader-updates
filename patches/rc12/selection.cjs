@@ -290,10 +290,17 @@ function updateLesson(course,lessons,i,lang){
  let html=fs.readFileSync(page,'utf8'),before=html;
  html=addStyle(html);
  const top=nav(course,lessons,i,lang,'top'),bottom=nav(course,lessons,i,lang,'bottom');
- html=html.replace(/<nav class="instant-nav" data-instant-place="top"[\s\S]*?<\/nav>\s*/i,'');
- const topAnchor=/(<div class="container">\s*<h1\b[^>]*>[\s\S]*?<\/h1>)/i;
- if(topAnchor.test(html))html=html.replace(topAnchor,'$1\n'+top);
- else html=html.replace(/(<div class="container">)/i,'$1\n'+top);
+ const existingTop=/<nav class="instant-nav" data-instant-place="top"[\s\S]*?<\/nav>/i.exec(html);
+ const topAnchor=/(<div class="container">\s*<h1\b[^>]*>[\s\S]*?<\/h1>)/i.exec(html);
+ if(existingTop&&topAnchor&&existingTop.index>topAnchor.index+topAnchor[0].length){
+  // Already correctly positioned after the lesson heading. Replace in place;
+  // moving it again would accumulate whitespace on every refresh.
+  html=html.replace(existingTop[0],top);
+ }else{
+  if(existingTop)html=html.replace(/<nav class="instant-nav" data-instant-place="top"[\s\S]*?<\/nav>\s*/i,'');
+  if(topAnchor)html=html.replace(/(<div class="container">\s*<h1\b[^>]*>[\s\S]*?<\/h1>)/i,'$1\n'+top);
+  else html=html.replace(/(<div class="container">)/i,'$1\n'+top);
+ }
  if(/<nav class="instant-nav" data-instant-place="bottom"[\s\S]*?<\/nav>/i.test(html)){
   html=html.replace(/<nav class="instant-nav" data-instant-place="bottom"[\s\S]*?<\/nav>/i,bottom);
  }else if(/<div class="nav">\s*<a\b[^>]*>Back to Course Index<\/a>\s*<\/div>/i.test(html)){
