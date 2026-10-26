@@ -1,0 +1,145 @@
+name: QA and publish Instant Downloader RC8 Classroom fix
+on:
+  push:
+    paths:
+      - ".github/workflows/publish-rc8.yml"
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify last RC package, unpack and overlay updated source
+        id: prepare
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $archive=Join-Path $PWD 'rc7.zip'
+          Invoke-WebRequest 'https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip' -OutFile $archive -UseBasicParsing -TimeoutSec 120
+          $oldHash=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($oldHash -ne 'bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'){throw 'Old release SHA256 mismatch'}
+          Expand-Archive -LiteralPath $archive -DestinationPath 'payload' -Force
+          $changed=@('selection.cjs','bridge.mjs','test_v17.cjs','Instant_Downloader.ps1','Install_Instant_Downloader.ps1','package.json')
+          foreach($name in $changed){
+            Copy-Item -LiteralPath (Join-Path 'patches/rc8' $name) -Destination (Join-Path 'payload' $name) -Force
+          }
+          if((Get-Content 'payload/package.json' -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.8'){throw 'Invalid RC8 version'}
+          if(-not (Select-String 'payload/bridge.mjs' -Pattern 'selectionApi.catalogCourses' -Quiet -SimpleMatch)){throw 'Root catalog fix missing'}
+          foreach($file in Get-ChildItem payload -File){
+            if($file.Name -in @('config.json','cookies.txt','storage_state.json','.env')){throw 'Privacy-sensitive file included'}
+          }
+
+      - name: Verify original PowerShell files on Windows PowerShell 5.1
+        id: ps
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @(Get-ChildItem payload -Filter '*.ps1')){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors | ForEach-Object {Write-Host $_};throw "Invalid PowerShell: $($file.Name)"}
+          }
+
+      - name: Validate real catalog selection regression
+        id: tests
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check selection.cjs
+          if($LASTEXITCODE){throw 'selection.cjs JavaScript syntax failed'}
+          node --check bridge.mjs
+          if($LASTEXITCODE){throw 'bridge.mjs JavaScript syntax failed'}
+          node test_v17.cjs
+          if($LASTEXITCODE){throw '13-card selection test failed'}
+          node test_v16.cjs
+          if($LASTEXITCODE){throw 'v16 regression failed'}
+          node test_audit.cjs
+          if($LASTEXITCODE){throw 'archive audit test failed'}
+          node test_upgrade.cjs
+          if($LASTEXITCODE){throw 'update regression failed'}
+
+      - name: Check Node.js local integration tests
+        id: node
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --no-audit --no-fund --no-save typescript@5.9.3
+          if($LASTEXITCODE){throw 'Node install failed'}
+          $source=Get-Content test_local.cjs -Raw
+          $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+          if($source.Contains($old)){
+            [IO.File]::WriteAllText((Join-Path $PWD 'test_local.cjs'),$source.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))
+          }
+          node test_local.cjs
+          if($LASTEXITCODE){throw 'local test failed'}
+
+      - name: Create verified code-only RC8 archive
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item -LiteralPath 'payload/node_modules' -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath 'payload/package-lock.json' -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path releases -Force | Out-Null
+          $dst='releases/Instant_Downloader_v1.8_RC8_code_only.zip'
+          $files=@(Get-ChildItem -LiteralPath 'payload' -File | Select-Object -ExpandProperty FullName)
+          Compress-Archive -LiteralPath $files -DestinationPath $dst -CompressionLevel Optimal
+          $verify=Join-Path $env:RUNNER_TEMP 'rc8-verify'
+          Expand-Archive -LiteralPath $dst -DestinationPath $verify
+          $v=(Get-Content (Join-Path $verify 'package.json') -Raw | ConvertFrom-Json).version
+          if($v -ne '1.8.0-rc.8'){throw "Bad packaged version: $v"}
+          $hash=(Get-FileHash $dst -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest=@{
+            version='1.8.0-rc.8'
+            channel='rc'
+            sha256=$hash
+            package_url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC8_code_only.zip'
+            notes='RC8: Show all Skool Classroom courses, including private courses visible to the signed-in user. Report inaccessible lessons without bypass. English/Romanian UI fixes.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD 'latest.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+          Write-Host "RELEASE_SHA256=$hash"
+
+      - name: Publish update feed only after tests pass
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json releases/Instant_Downloader_v1.8_RC8_code_only.zip
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Publish RC8 catalog fix, SHA256 verified'
+            git push
+            if($LASTEXITCODE){throw 'Cannot push release manifest'}
+          }
+      - name: Record CI outcome
+        if: always()
+        shell: pwsh
+        run: |
+          $path='RC8_CATALOG_QA.md'
+          $content=@"
+          # RC8 Windows release QA
+          Source verification: ${{ steps.prepare.outcome }}
+          PowerShell 5.1 parsing: ${{ steps.ps.outcome }}
+          Catalog regression tests: ${{ steps.tests.outcome }}
+          Node.js integration tests: ${{ steps.node.outcome }}
+          Code-only packaging: ${{ steps.package.outcome }}
+          Public update feed publishing: ${{ steps.publish.outcome }}
+          This does not prove a live logged-in Skool course scan has been completed.
+          "@
+          [IO.File]::WriteAllText((Join-Path $PWD $path),$content,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add $path
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Record RC8 Windows catalog QA'
+            git push
+          }
