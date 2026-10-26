@@ -25,8 +25,8 @@ try{
  const courseHtml=fs.readFileSync(path.join(course,'index.html'),'utf8');
  for(const s of [first,second,third,last]){
   assert.equal((s.match(/data-instant-place=/g)||[]).length,2,'top/bottom navigation');
-  assert.match(s,/font-family: Inter/i);
-  assert.match(s,/Back to course/);
+  assert.match(s,/font-family:\s*Inter/i);
+  assert.match(s,/All lessons/);
   assert.doesNotMatch(s,/>Back to Course Index</i);
   assert.match(s,/<video controls src="video.mp4"/);
   assert.match(s,/resources\/attachment.pdf/);
