@@ -1,4 +1,4 @@
-name: RC13 Skool course order and lesson sidebar (QA rerun)
+name: RC13 Skool course order and lesson sidebar (integration)
 on:
   push:
     paths:
@@ -29,7 +29,7 @@ jobs:
           try{$oldFileNames=@($z.Entries | ForEach-Object {$_.FullName})}finally{$z.Dispose()}
           if($oldFileNames.Count -lt 20){throw 'Incomplete RC12 baseline'}
           Expand-Archive old.zip -DestinationPath payload
-          foreach($name in @('Instant_Downloader.ps1','package.json','selection.cjs','bridge.mjs')){
+          foreach($name in @('Instant_Downloader.ps1','package.json','selection.cjs','bridge.mjs','test_local.cjs')){
             Copy-Item -LiteralPath (Join-Path patches/rc13 $name) -Destination (Join-Path payload $name) -Force
           }
           # Test-only fixture: not shipped because RC7 updaters reject new file names.
