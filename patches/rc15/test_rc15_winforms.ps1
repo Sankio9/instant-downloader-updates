@@ -128,21 +128,26 @@ if($script:updatePanel.Bounds.X -ne 204 -or $script:updatePanel.Bounds.Width -ne
 if($script:activityCard.Bounds.Bottom -ge $script:historyCard.Bounds.Top){throw 'Progress and history cards overlap'}
 if($script:historyCard.Bounds.Bottom -ge $script:logCard.Bounds.Top){throw 'History and log cards overlap'}
 if($script:actionsCard.Bounds.Bottom -ge $script:activityCard.Bounds.Top){throw 'Actions and progress cards overlap'}
-$form.ShowInTaskbar=$false
-[void]$form.Show()
-[Windows.Forms.Application]::DoEvents()
-$script:navUpdates.PerformClick()
-if(-not $script:openedUpdates){throw 'Updates side navigation does not open view'}
+# Render entire intended desktop layout before Windows scales the window to
+# a small headless runner's desktop resolution.
 if($env:RC15_SCREENSHOT_PATH){
  $destination=$env:RC15_SCREENSHOT_PATH
  [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+ $form.CreateControl()
  $bitmap=New-Object Drawing.Bitmap($form.Width,$form.Height)
  try{
   $form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height)))
   $bitmap.Save($destination,[Drawing.Imaging.ImageFormat]::Png)
-  Write-Host ('Screenshot: '+$destination)
+  Write-Host ('Full layout screenshot: '+$destination)
  }finally{$bitmap.Dispose()}
 }
+$form.ShowInTaskbar=$false
+[void]$form.Show()
+[Windows.Forms.Application]::DoEvents()
+if(-not $script:mainContent.AutoScroll){throw 'Compact screens would clip the content'}
+if($script:mainContent.Bounds.Right -gt $form.ClientSize.Width){throw 'Viewport is wider than form'}
+$script:navUpdates.PerformClick()
+if(-not $script:openedUpdates){throw 'Updates side navigation does not open view'}
 Write-Host 'PASS: RC15 structural card layout, input borders, no overlaps, four tabs, library browser, working sidebar, updates'
 $form.Close()
 $form.Dispose()
