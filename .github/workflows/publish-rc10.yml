@@ -1,0 +1,141 @@
+name: Validate and publish RC10 course usability
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-rc10.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify RC9 release and apply RC10 UX files
+        id: prep
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content latest.json -Raw -Encoding UTF8 | ConvertFrom-Json
+          if($m.version -ne '1.8.0-rc.9'){throw 'Expected RC9 base'}
+          Invoke-WebRequest -Uri $m.package_url -OutFile rc9.zip -UseBasicParsing -TimeoutSec 120
+          if((Get-FileHash rc9.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $m.sha256){throw 'RC9 base SHA mismatch'}
+          Expand-Archive -LiteralPath rc9.zip -DestinationPath payload
+          $files=@('lesson_ui.cjs','test_lesson_ui.cjs','bridge.mjs','Instant_Downloader.ps1','Update_Instant_Downloader.ps1','Apply_Update.ps1','Install_Instant_Downloader.ps1','package.json')
+          foreach($f in $files){Copy-Item -LiteralPath (Join-Path patches/rc10 $f) -Destination (Join-Path payload $f) -Force}
+          if((Get-Content payload/package.json -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.10'){throw 'RC10 package version mismatch'}
+          foreach($bad in @('.auth','cookies.txt','config.json','node_modules','storage_state.json')){
+            if(Test-Path (Join-Path payload $bad)){throw 'Unsafe release content'}
+          }
+      - name: Validate PowerShell 5.1 syntax and update allowlists
+        id: ps
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in @(Get-ChildItem payload -Filter '*.ps1')){
+            $t=$null;$e=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$t,[ref]$e)
+            if($e.Count){$e|ForEach-Object{Write-Host $_};throw "PowerShell parse error: $($file.Name)"}
+          }
+          foreach($file in @('Update_Instant_Downloader.ps1','Apply_Update.ps1','Install_Instant_Downloader.ps1')){
+            if(-not (Select-String -LiteralPath (Join-Path payload $file) -Pattern "'lesson_ui.cjs'" -SimpleMatch -Quiet)){throw "Missing UI file in $file"}
+          }
+      - name: Check UI and backward compatible archive content
+        id: nav
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check lesson_ui.cjs
+          if($LASTEXITCODE){throw 'UI script invalid'}
+          node --check bridge.mjs
+          if($LASTEXITCODE){throw 'Bridge script invalid'}
+          node test_lesson_ui.cjs
+          if($LASTEXITCODE){throw 'Lesson navigation regression failed'}
+          node test_lesson_documents.cjs
+          if($LASTEXITCODE){throw 'Document archiving regression failed'}
+          node test_v17.cjs
+          if($LASTEXITCODE){throw 'Course catalog regression failed'}
+          node test_v16.cjs
+          if($LASTEXITCODE){throw 'v16 compatibility failed'}
+          node test_audit.cjs
+          if($LASTEXITCODE){throw 'Audit failed'}
+          node test_upgrade.cjs
+          if($LASTEXITCODE){throw 'Upgrade failed'}
+      - name: Confirm Node.js integration
+        id: runtime
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --no-audit --no-fund --no-save typescript@5.9.3
+          if($LASTEXITCODE){throw 'npm failed'}
+          $s=Get-Content test_local.cjs -Raw
+          $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+          if($s.Contains($old)){
+            [IO.File]::WriteAllText((Join-Path $PWD 'test_local.cjs'),$s.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))
+          }
+          node test_local.cjs
+          if($LASTEXITCODE){throw 'Node integration failed'}
+      - name: Package RC10 and generate SHA256 manifest
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item payload/node_modules -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item payload/package-lock.json -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory releases -Force | Out-Null
+          $dst='releases/Instant_Downloader_v1.8_RC10_code_only.zip'
+          $files=@(Get-ChildItem payload -File | Select-Object -ExpandProperty FullName)
+          Compress-Archive -LiteralPath $files -DestinationPath $dst -CompressionLevel Optimal
+          $verification=Join-Path $env:RUNNER_TEMP 'rc10-verification'
+          Expand-Archive -LiteralPath $dst -DestinationPath $verification
+          foreach($f in @('lesson_ui.cjs','test_lesson_ui.cjs','lesson_documents.cjs','bridge.mjs','package.json')){
+            if(!(Test-Path (Join-Path $verification $f))){throw "Missing file $f"}
+          }
+          $sha=(Get-FileHash $dst -Algorithm SHA256).Hash.ToLowerInvariant()
+          $m=@{
+            version='1.8.0-rc.10'
+            channel='rc'
+            sha256=$sha
+            package_url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC10_code_only.zip'
+            notes='RC10: clearer numbered lessons, top/bottom previous and next navigation, friendly course wording, Inter font stack, refresh existing offline pages.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD latest.json),($m|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+          Write-Host "SHA256=$sha"
+      - name: Publish update manifest after QA
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json releases/Instant_Downloader_v1.8_RC10_code_only.zip
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Publish RC10 course usability and verified update ZIP'
+            git push
+            if($LASTEXITCODE){throw 'Publication failed'}
+          }
+      - name: Record release checks
+        if: always()
+        shell: pwsh
+        run: |
+          $report=@"
+          # RC10 Windows QA
+          Verified RC9 base: ${{ steps.prep.outcome }}
+          Windows PowerShell 5.1: ${{ steps.ps.outcome }}
+          Navigation/archiver regression: ${{ steps.nav.outcome }}
+          Node runtime integration: ${{ steps.runtime.outcome }}
+          ZIP integrity: ${{ steps.package.outcome }}
+          Public RC10 feed: ${{ steps.publish.outcome }}
+          PC2 interactive usability validation is still needed.
+          "@
+          [IO.File]::WriteAllText((Join-Path $PWD 'RC10_USABILITY_QA.md'),$report,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RC10_USABILITY_QA.md
+          if(-not (git diff --cached --quiet)){git commit -m 'Record RC10 Windows usability tests';git push}
