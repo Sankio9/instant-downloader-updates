@@ -32,11 +32,11 @@ try{
   assert.match(s,/resources\/attachment.pdf/);
   assert.match(s,/https:\/\/example.org\/file.pdf/);
  }
- assert.equal((first.match(/Next lesson/g)||[]).length,2);
+ assert.equal((first.match(/<span>Next lesson →<\/span>/g)||[]).length,2);
  assert.ok(!first.includes('Previous lesson'));
  assert.ok((second.match(/href="\.\.\/\.\.\/2-Learn\/1-Third\/index.html"/g)||[]).length>=2,'cross-module next link');
  assert.ok((third.match(/href="\.\.\/\.\.\/1-Start\/2-Second\/index.html"/g)||[]).length>=2,'cross-module previous link');
- assert.equal((last.match(/Previous lesson/g)||[]).length,2);
+ assert.equal((last.match(/<span>← Previous lesson<\/span>/g)||[]).length,2);
  assert.ok(!last.includes('Next lesson'));
  assert.ok(courseHtml.includes('counter(lesson-number, decimal-leading-zero)'));
  assert.ok(courseHtml.includes('Start with lesson 01'));
@@ -44,8 +44,8 @@ try{
  const updated=enhanceArchive(root,'ro');
  assert.equal(updated.courses,1);assert.equal(updated.lessons,4);
  const ro=fs.readFileSync(path.join(course,items[1][0],items[1][1],'index.html'),'utf8');
- assert.equal((ro.match(/Lecția următoare/g)||[]).length,2);
- assert.equal((ro.match(/Înapoi la curs/g)||[]).length,2);
+ assert.equal((ro.match(/<span>Lecția următoare →<\/span>/g)||[]).length,2);
+ assert.equal((ro.match(/>Înapoi la curs<\/a>/g)||[]).length,2);
  assert.equal((ro.match(/data-instant-place=/g)||[]).length,2);
  assert.equal(lessonList(course).length,4);
  console.log('PASS offline usability: numbered courses, readable fonts, top/bottom Prev/Next across modules, Romanian labels, safe rerun, original video/resources');
