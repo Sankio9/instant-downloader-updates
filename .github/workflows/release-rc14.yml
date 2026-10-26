@@ -1,8 +1,5 @@
 name: RC14 pastel Learning Workspace Windows UI
 on:
-  push:
-    paths:
-      - '.github/workflows/release-rc14.yml'
   workflow_dispatch:
 permissions:
   contents: write
