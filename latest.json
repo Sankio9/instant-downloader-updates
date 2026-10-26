@@ -1,7 +1,7 @@
 {
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC9_code_only.zip",
-  "version": "1.8.0-rc.9",
-  "sha256": "ce35d88390c1a05ce533ba2c1ab7cf6fb2370d533e87fd41cce1ebc98b868cfb",
+  "notes": "RC10: clearer numbered lessons, top/bottom previous and next navigation, friendly course wording, Inter font stack, refresh existing offline pages.",
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC10_code_only.zip",
+  "version": "1.8.0-rc.10",
   "channel": "rc",
-  "notes": "RC9: Download supported public lesson documents into resources/, preserve original links and add Deschide local; report inaccessible files; safe size/type limits."
+  "sha256": "f10dcee5f32424454895de44a3a78546702a7bbe59d4e8170a399779990e1d5d"
 }
