@@ -1,9 +1,6 @@
 name: Build and verify Windows installer (PC2; clean installer)
 
 on:
-  push:
-    paths:
-      - ".github/workflows/build-windows-installer.yml"
   workflow_dispatch:
 
 permissions:
