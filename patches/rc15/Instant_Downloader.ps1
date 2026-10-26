@@ -886,6 +886,9 @@ $form.MaximizeBox=$false
 $script:mainContent=New-Object Windows.Forms.Panel
 $script:mainContent.SetBounds(204,0,986,908)
 $script:mainContent.BackColor=Color '#F7F9FD'
+# On smaller displays, scrolling is preferable to clipped controls.
+$script:mainContent.AutoScroll=$true
+$script:mainContent.AutoScrollMinSize=New-Object Drawing.Size(978,901)
 foreach($c in @($form.Controls)){
   if($c -eq $script:updatePanel){continue}
   [void]$form.Controls.Remove($c)
@@ -1095,6 +1098,18 @@ $script:updatePanel.SetBounds(204,0,986,908)
 $script:updatePanel.BackColor=Color '#F7FAFD'
 $script:updatePanel.BringToFront()
 $script:updatePanel.Visible=$false
+# Resize content viewport to the actual screen. The full layout remains
+# scrollable even on 1024x768 or when Windows display scaling is increased.
+$form.Add_ClientSizeChanged({
+  if($script:mainContent){
+    $viewportWidth=[Math]::Max(300,($form.ClientSize.Width-204))
+    $viewportHeight=[Math]::Max(300,$form.ClientSize.Height)
+    $script:mainContent.SetBounds(204,0,$viewportWidth,$viewportHeight)
+    if($script:sideNav){$script:sideNav.Height=$viewportHeight}
+    if($script:updatePanel){$script:updatePanel.SetBounds(204,0,$viewportWidth,$viewportHeight)}
+  }
+})
+$script:mainContent.SetBounds(204,0,([Math]::Max(300,($form.ClientSize.Width-204))),([Math]::Max(300,$form.ClientSize.Height)))
 Refresh-Language
 $script:trayIcon=New-Object Windows.Forms.NotifyIcon
 $script:trayIcon.Icon=[Drawing.SystemIcons]::Information
