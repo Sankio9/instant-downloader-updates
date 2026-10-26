@@ -1,4 +1,4 @@
-name: RC13 Skool course order and lesson sidebar
+name: RC13 Skool course order and lesson sidebar (QA rerun)
 on:
   push:
     paths:
