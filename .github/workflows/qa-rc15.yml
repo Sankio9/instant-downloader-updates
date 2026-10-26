@@ -1,4 +1,4 @@
-name: RC15 layout QA screenshot (no release)
+name: RC15 responsive layout QA screenshot (no release)
 on:
   push:
     paths:
