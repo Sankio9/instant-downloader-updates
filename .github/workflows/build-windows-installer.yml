@@ -1,4 +1,4 @@
-name: Build and verify Windows installer (PC2)
+name: Build and verify Windows installer (PC2; clean installer)
 
 on:
   push:
