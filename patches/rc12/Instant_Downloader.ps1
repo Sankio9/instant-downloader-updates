@@ -822,6 +822,10 @@ $timer.Add_Tick({
       }
     }
 
+    # A terminated worker cannot have any active transfers. Keep completed
+    # lesson records in History and show the final result instead.
+    $script:slotItems.Clear()
+    foreach($entry in $script:entries){$entry.active=$false;$entry.finished=$false}
     RefreshProgressArea
     UpdateButtons
     if($code -eq 0 -and $script:runningMode -eq 'scan' -and $script:catalogResult){ShowSelectionDialog $script:catalogResult}
