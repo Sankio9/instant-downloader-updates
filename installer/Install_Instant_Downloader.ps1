@@ -7,6 +7,16 @@ $source = Split-Path -Parent $MyInvocation.MyCommand.Path
 $exeNames=@('README_RO.txt','package.json','Instant_Downloader.ps1','START_INSTANT_DOWNLOADER.cmd','supervisor.cjs','bridge.mjs','audit_archive.cjs','selection.cjs','check_update_notice.cjs','patch_progress.cjs','DIAGNOSTIC_INSTANT_DOWNLOADER.cmd','Diagnostics.ps1','Preflight.ps1','Update_Instant_Downloader.ps1','Apply_Update.ps1')
 
 function ShowInfo($message,$title='Instant Downloader Installer') { [void][System.Windows.Forms.MessageBox]::Show($message,$title) }
+function Ensure-InstantDownloaderSubfolder([string]$selectedPath){
+  # Folder selection picks a parent. Use a dedicated subfolder without duplicating it.
+  if([string]::IsNullOrWhiteSpace($selectedPath)){return $selectedPath}
+  $trimmed=$selectedPath.TrimEnd([char[]]@('\','/'))
+  $lastPart=[IO.Path]::GetFileName($trimmed)
+  if($lastPart -ieq 'Instant Downloader' -or $lastPart -ieq 'InstantDownloader'){
+    return $selectedPath
+  }
+  return (Join-Path -Path $selectedPath -ChildPath 'Instant Downloader')
+}
 function FolderDialog($current){
   $d=New-Object System.Windows.Forms.FolderBrowserDialog
   $d.Description='Alege un folder'
@@ -170,7 +180,7 @@ if($driveCombo.Items.Count -gt 0){$driveCombo.SelectedIndex=$chosen}
 function CurrentDisk(){if($ready.Count -eq 0){throw 'Nu exista un disc disponibil.'};return $ready[[Math]::Max($driveCombo.SelectedIndex,0)].Name}
 $defaultDisk=if($ready.Count -gt 0){$ready[$chosen].Name}else{'C:\'}
 [void](Label 'Folder TEMP (date temporare, cache npm, browser):' 25 167 540 20)
-$tempText=Field (Join-Path $defaultDisk 'TEMP\InstantDownloader') 190
+$tempText=Field (Join-Path $defaultDisk 'TEMP\Instant Downloader') 190
 $tempBrowse=Btn 'Alege...' 189
 [void](Label 'Folder ARCHIVA (numai cursuri / lectii / index.html):' 25 232 565 20)
 $archiveText=Field (Join-Path $defaultDisk 'Instant Archive') 254
@@ -184,13 +194,13 @@ $oldBrowse=Btn 'Alege...' 376
 $driveCombo.Add_SelectedIndexChanged({
   if($ready.Count -eq 0){return}
   $d=CurrentDisk
-  $tempText.Text=Join-Path $d 'TEMP\InstantDownloader'
+  $tempText.Text=Join-Path $d 'TEMP\Instant Downloader'
   $archiveText.Text=Join-Path $d 'Instant Archive'
   $appText.Text=Join-Path $d 'Apps\Instant Downloader'
 })
-$tempBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $tempText.Text;if($v){$tempText.Text=$v}})
+$tempBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $tempText.Text;if($v){$tempText.Text=Ensure-InstantDownloaderSubfolder $v}})
 $archiveBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $archiveText.Text;if($v){$archiveText.Text=$v}})
-$appBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $appText.Text;if($v){$appText.Text=$v}})
+$appBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $appText.Text;if($v){$appText.Text=Ensure-InstantDownloaderSubfolder $v}})
 $oldBrowse.Add_Click({if($script:isInstalling){return};$v=FolderDialog $oldText.Text;if($v){$oldText.Text=$v}})
 $installBtn=New-Object System.Windows.Forms.Button
 $installBtn.Text='INSTALEAZA / ACTUALIZEAZA'
