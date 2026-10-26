@@ -1,6 +1,9 @@
-name: Build and verify Windows installer (PC2; clean installer)
+name: Build and verify Windows installer (PC2 v2 - folder pickers)
 
 on:
+  push:
+    paths:
+      - '.github/workflows/build-windows-installer.yml'
   workflow_dispatch:
 
 permissions:
@@ -45,6 +48,35 @@ jobs:
             if($e.Count){$e|ForEach-Object{Write-Host $_.Message};throw "Invalid PowerShell: $($p.Name)"}
             Write-Host "PASS syntax: $($p.Name)"
           }
+
+      - name: Verify automatic TEMP and application folder suffixes on Windows
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          $source=Get-Content -LiteralPath 'payload/Install_Instant_Downloader.ps1' -Raw -Encoding UTF8
+          $match=[regex]::Match($source,'(?ms)^function Ensure-InstantDownloaderSubfolder\(\[string\]\$selectedPath\)\{.*?^\}')
+          if(-not $match.Success){throw 'Installer path normalization function missing'}
+          . ([scriptblock]::Create($match.Value))
+          $cases=@(
+            @{source='D:\TEMP ADOBE';expected='D:\TEMP ADOBE\Instant Downloader'},
+            @{source='D:\TEMP ADOBE\Instant Downloader';expected='D:\TEMP ADOBE\Instant Downloader'},
+            @{source='D:\TEMP ADOBE\InstantDownloader';expected='D:\TEMP ADOBE\InstantDownloader'},
+            @{source='C:\Apps';expected='C:\Apps\Instant Downloader'},
+            @{source='C:\Apps\Instant Downloader';expected='C:\Apps\Instant Downloader'},
+            @{source='C:\';expected='C:\Instant Downloader'}
+          )
+          foreach($c in $cases){
+            $actual=Ensure-InstantDownloaderSubfolder $c.source
+            if($actual -cne $c.expected){throw "Wrong folder selection result: $actual, expected $($c.expected)"}
+            Write-Host "PASS: $($c.source) -> $actual"
+          }
+          if(-not $source.Contains('$tempText.Text=Ensure-InstantDownloaderSubfolder $v')){throw 'TEMP picker is not using the suffix helper'}
+          if(-not $source.Contains('$appText.Text=Ensure-InstantDownloaderSubfolder $v')){throw 'Application picker is not using the suffix helper'}
+          if(-not $source.Contains("Join-Path $defaultDisk 'TEMP\Instant Downloader'".Replace('$defaultDisk','$defaultDisk'))){
+            # Checked separately below as the default-drive value is interpolated in double strings.
+            if(-not $source.Contains("'TEMP\Instant Downloader'")){throw 'TEMP default folder suffix missing'}
+          }
+          Write-Host 'PASS all TEMP/application folder selection cases'
 
       - name: Static regression test suite
         shell: pwsh
@@ -98,11 +130,11 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer/InstantDownloader.iss'
           if($LASTEXITCODE -ne 0){throw 'ISCC compilation failed'}
-          $exe='installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe'
+          $exe='installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe'
           if(!(Test-Path -LiteralPath $exe)){throw 'Installer executable missing'}
           if((Get-Item $exe).Length -lt 300000){throw 'Installer executable suspiciously small'}
           $hash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
-          Set-Content -LiteralPath 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256' -Value ($hash + '  Instant_Downloader_Setup_v1.8_RC7_PC2.exe') -Encoding ascii
+          Set-Content -LiteralPath 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe.sha256' -Value ($hash + '  Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe') -Encoding ascii
           Write-Host "EXE_BYTES=$((Get-Item $exe).Length)"
           Write-Host "EXE_SHA256=$hash"
 
@@ -110,17 +142,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference='Stop'
-          $exe=Join-Path $PWD 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe'
+          $exe=Join-Path $PWD 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe'
           $p=Start-Process -FilePath $exe -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
           if($p.ExitCode -ne 0){throw "EXE smoke install failed with exit code $($p.ExitCode)"}
           Write-Host 'PASS Windows EXE bootstrap extraction (dependency install deliberately skipped in silent mode)'
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Instant-Downloader-Windows-Installer-PC2
+          name: Instant-Downloader-Windows-Installer-PC2-v2
           path: |
-            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe
-            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256
+            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe
+            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe.sha256
 
       - name: Publish PC2 validation prerelease
         shell: pwsh
@@ -128,12 +160,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           $ErrorActionPreference='Stop'
-          $tag='v1.8.0-rc.7-pc2'
-          $files=@('installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe','installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256')
+          $tag='v1.8.0-rc.7-pc2-v2'
+          $files=@('installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe','installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2_v2.exe.sha256')
           gh release view $tag *> $null
           if($LASTEXITCODE -eq 0){
             gh release upload $tag $files --clobber
           }else{
-            gh release create $tag $files --title 'Instant Downloader RC7 - Windows PC2 installer' --prerelease --notes 'Windows EXE installer for clean-PC testing. Runs the interactive dependency/setup wizard. SHA-256 and Windows PowerShell parser + local Node regression checks are verified by GitHub Actions. Actual Skool login/download and interactive install on PC2 still require user validation. Windows SmartScreen can warn because installer is unsigned. Not a stable final release.' --target main
+            gh release create $tag $files --title 'Instant Downloader RC7 - Windows PC2 installer v2 (folder pickers)' --prerelease --notes 'PC2 installer v2: selected TEMP and application parent folders automatically receive an Instant Downloader subfolder. Runs the interactive dependency/setup wizard. SHA-256 and Windows PowerShell parser + local Node regression checks are verified by GitHub Actions. Actual Skool login/download and interactive install on PC2 still require user validation. Windows SmartScreen can warn because installer is unsigned. Not a stable final release.' --target main
           }
           if($LASTEXITCODE -ne 0){throw 'Publishing the PC2 prerelease failed'}
