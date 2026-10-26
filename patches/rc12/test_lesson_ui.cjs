@@ -55,5 +55,22 @@ try{
  assert.equal((ro.match(/>Toate lecțiile<\/a>/g)||[]).length,2);
  assert.equal((ro.match(/data-instant-place=/g)||[]).length,2);
  assert.equal(lessonList(course).length,4);
+ // Simulate a Skool reordering that does not match existing file/folder order.
+ // .course.json and lesson.json, not the saved HTML grid, are the source of truth.
+ const firstMeta=path.join(course,'1-Start','1-Primă lecție','lesson.json');
+ const secondMeta=path.join(course,'1-Start','2-Second','lesson.json');
+ const one=JSON.parse(fs.readFileSync(firstMeta,'utf8'));
+ const two=JSON.parse(fs.readFileSync(secondMeta,'utf8'));
+ one.lessonIndex=2;two.lessonIndex=1;
+ fs.writeFileSync(firstMeta,JSON.stringify(one));fs.writeFileSync(secondMeta,JSON.stringify(two));
+ enhanceCourse(course,'en');
+ const reordered=fs.readFileSync(path.join(course,'index.html'),'utf8');
+ const lpos=reordered.indexOf('class="instant-lesson-name">Second');
+ const rpos=reordered.indexOf('class="instant-lesson-name">Primă lecție');
+ assert.ok(lpos>=0&&rpos>lpos,'Visible course order must follow Skool lessonIndex metadata');
+ assert.ok(reordered.includes('href="1-Start/2-Second/index.html">Start course'), 'Start leads to the first Skool-order lesson');
+ assert.equal((reordered.match(/class="instant-start"/g)||[]).length,1,'Only one compact CTA after refresh');
+ assert.equal((reordered.match(/class="module instant-module"/g)||[]).length,2,'Exactly two modules after repeat refresh');
+ assert.match(reordered,/flex:0 0 auto!important/,'Next/Previous must stay compact');
  console.log('PASS offline usability: numbered courses, readable fonts, top/bottom Prev/Next across modules, Romanian labels, safe rerun, original video/resources');
 }finally{fs.rmSync(temp,{recursive:true,force:true})}
