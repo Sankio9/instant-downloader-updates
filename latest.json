@@ -1,7 +1,7 @@
 {
-  "version": "1.8.0-rc.8",
-  "sha256": "59e0b7090ba93a17a2c0c625830d53d06f1609cc876d4597628ca316bc03f39d",
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC9_code_only.zip",
+  "version": "1.8.0-rc.9",
+  "sha256": "ce35d88390c1a05ce533ba2c1ab7cf6fb2370d533e87fd41cce1ebc98b868cfb",
   "channel": "rc",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC8_code_only.zip",
-  "notes": "RC8: Show all Skool Classroom courses, including private courses visible to the signed-in user. Report inaccessible lessons without bypass. English/Romanian UI fixes."
+  "notes": "RC9: Download supported public lesson documents into resources/, preserve original links and add Deschide local; report inaccessible files; safe size/type limits."
 }
