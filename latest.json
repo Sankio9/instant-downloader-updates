@@ -1,7 +1,7 @@
 {
-  "notes": "RC12: only active progress bars and percentages; clear completed/failed result; readable language selector; clean course lesson list with Skool metadata order, compact navigation and Start course.",
+  "notes": "RC13: Left sidebar in offline lessons shows current-module lessons with active highlight; community course library follows Choose sections catalog order after scan and refresh; previous RC12 improvements retained.",
   "channel": "rc",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC12_code_only.zip",
-  "version": "1.8.0-rc.12",
-  "sha256": "5533e285481f3c1c63e9d3676e591577c76e30b6922b80935712eecb293cb999"
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC13_code_only.zip",
+  "version": "1.8.0-rc.13",
+  "sha256": "ef355202d57161d9e3f72518ef5a03e2f336a22e3a916af574f9d7e751f134f1"
 }
