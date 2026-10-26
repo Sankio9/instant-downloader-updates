@@ -2,6 +2,7 @@
 RC13 baseline: success
 PowerShell 5.1 parser: success
 Live WinForms progress UI state tests: success
+Pastel Learning Workspace Windows Forms navigation/tab smoke test: success
 Previously verified course archive regressions: success
 Node integration: success
 Legacy update ZIP file inventory: success
