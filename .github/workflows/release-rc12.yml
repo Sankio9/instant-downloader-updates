@@ -1,8 +1,5 @@
 name: RC12 simplified progress and course layout (idempotent)
 on:
-  push:
-    paths:
-      - '.github/workflows/release-rc12.yml'
   workflow_dispatch:
 permissions:
   contents: write
