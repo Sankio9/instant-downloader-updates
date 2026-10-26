@@ -1,8 +1,5 @@
 name: Validate and publish RC10 course usability (accessible nav tests)
 on:
-  push:
-    paths:
-      - '.github/workflows/publish-rc10.yml'
   workflow_dispatch:
 permissions:
   contents: write
