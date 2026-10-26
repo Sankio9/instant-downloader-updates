@@ -1,7 +1,7 @@
 {
-  "notes": "RC10: clearer numbered lessons, top/bottom previous and next navigation, friendly course wording, Inter font stack, refresh existing offline pages.",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC10_code_only.zip",
-  "version": "1.8.0-rc.10",
+  "notes": "RC11 fixes updater ZIP rejected error for older versions. Bundles course navigation, Inter-style typography, offline lesson documents and Skool catalog fixes into approved files.",
+  "sha256": "027276c80773c5b582d77fbe2ed955ae422611bf3cd9fef0773ec9d27c305711",
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC11_code_only.zip",
   "channel": "rc",
-  "sha256": "f10dcee5f32424454895de44a3a78546702a7bbe59d4e8170a399779990e1d5d"
+  "version": "1.8.0-rc.11"
 }
