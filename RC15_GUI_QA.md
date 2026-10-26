@@ -2,6 +2,8 @@
 RC14 baseline: success
 PowerShell 5.1 parser: success
 Live WinForms progress UI state tests: success
+Card-based Learning Workspace Windows UI and small-screen scroll test: success
+Sanitized screenshot generated and reviewed: success
 Previously verified course archive regressions: success
 Node integration: success
 Legacy update ZIP file inventory: success
