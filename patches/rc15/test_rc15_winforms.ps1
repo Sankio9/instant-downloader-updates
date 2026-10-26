@@ -140,6 +140,7 @@ if($env:RC15_SCREENSHOT_PATH){
  $destination=$env:RC15_SCREENSHOT_PATH
  [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
  $script:mainContent.SetBounds(204,0,986,908)
+ $script:sideNav.Height=908
  $script:mainContent.AutoScrollPosition=New-Object Drawing.Point(0,0)
  [Windows.Forms.Application]::DoEvents()
  $canvas=New-Object Drawing.Bitmap(1190,908)
