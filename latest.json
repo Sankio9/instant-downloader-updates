@@ -1,7 +1,7 @@
 {
-  "notes": "RC13: Left sidebar in offline lessons shows current-module lessons with active highlight; community course library follows Choose sections catalog order after scan and refresh; previous RC12 improvements retained.",
-  "channel": "rc",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC13_code_only.zip",
-  "version": "1.8.0-rc.13",
-  "sha256": "ef355202d57161d9e3f72518ef5a03e2f336a22e3a916af574f9d7e751f134f1"
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC14_code_only.zip",
+  "sha256": "5b336b9c12ef3b9e0ddc86c22f14145efa9f1f133abf3bd8336a436ff1184527",
+  "notes": "RC14: Approved Learning Workspace pastel blue desktop UI; Skool active tab, disabled YouTube/Instagram/TikTok, Choose sections and existing controls preserved, functional sidebar, course archives continue opening in the external browser.",
+  "version": "1.8.0-rc.14",
+  "channel": "rc"
 }
