@@ -33,8 +33,8 @@ jobs:
             Copy-Item -LiteralPath (Join-Path patches/rc15 $name) -Destination (Join-Path payload $name) -Force
           }
           # Test-only fixture: not shipped because RC7 updaters reject new file names.
-          Copy-Item -LiteralPath patches/rc14/test_lesson_ui.cjs -Destination payload/test_lesson_ui.cjs
-          Copy-Item -LiteralPath patches/rc14/test_sidebar_order.cjs -Destination payload/test_sidebar_order.cjs
+          Copy-Item -LiteralPath patches/rc13/test_lesson_ui.cjs -Destination payload/test_lesson_ui.cjs
+          Copy-Item -LiteralPath patches/rc13/test_sidebar_order.cjs -Destination payload/test_sidebar_order.cjs
           Copy-Item -LiteralPath patches/rc12/test_lesson_documents.cjs -Destination payload/test_lesson_documents.cjs
           Copy-Item -LiteralPath patches/rc15/test_rc15_winforms.ps1 -Destination payload/test_rc15_winforms.ps1
           if((Get-Content payload/package.json -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.15'){throw 'RC15 version mismatch'}
