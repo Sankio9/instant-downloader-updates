@@ -1,8 +1,5 @@
 name: RC11 legacy-updater compatibility release
 on:
-  push:
-    paths:
-      - '.github/workflows/release-rc11-compat.yml'
   workflow_dispatch:
 permissions:
   contents: write
