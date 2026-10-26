@@ -1,7 +1,7 @@
 {
-  "version": "1.8.0-rc.7",
+  "version": "1.8.0-rc.8",
+  "sha256": "59e0b7090ba93a17a2c0c625830d53d06f1609cc876d4597628ca316bc03f39d",
   "channel": "rc",
-  "sha256": "bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip",
-  "notes": "RC7 preview: in-app Updates page, Back navigation, English/Romanian text fixes. This is not a stable production release."
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC8_code_only.zip",
+  "notes": "RC8: Show all Skool Classroom courses, including private courses visible to the signed-in user. Report inaccessible lessons without bypass. English/Romanian UI fixes."
 }
