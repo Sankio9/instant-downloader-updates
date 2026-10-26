@@ -409,39 +409,3 @@ $installBtn.Add_Click({
 Notice 'Alege locatiile si apasa INSTALEAZA. Internetul este necesar la prima instalare.'
 [void]$form.ShowDialog()
 if(-not $script:installedOk){exit 1}
-){throw 'Package version is missing or invalid.'}
-    $cfg=@{version=$releaseVer;tempPath=$tempRoot;archivePath=$archive;nodePath=$node;lastUrl=$(if($prior){[string]$prior.lastUrl}else{''});updateManifestSource=$(if($prior){[string]$prior.updateManifestSource}else{''});updateManifestFallback=$(if($prior){[string]$prior.updateManifestFallback}else{''});updateChannel=$(if($prior -and $prior.updateChannel){[string]$prior.updateChannel}else{'stable'})}
-    [IO.File]::WriteAllText($cfgFile,($cfg|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
-    Step 7 'Etapa 8/8 - Finalizez configurarea...'
-    $desktop=[Environment]::GetFolderPath('Desktop')
-    $shell=New-Object -ComObject WScript.Shell
-    $shortcut=$shell.CreateShortcut((Join-Path $desktop 'Instant Downloader.lnk'))
-    $shortcut.TargetPath=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-    $shortcut.Arguments='-NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "'+(Join-Path $programDir 'Instant_Downloader.ps1')+'"'
-    $shortcut.WorkingDirectory=$programDir
-    $shortcut.Description='Instant Downloader v1.8 RC4'
-    $shortcut.Save()
-    Notice 'Scurtatura Desktop creata.'
-    # The package downloads yt-dlp by itself. Proactively try installing it now.
-    $verifyArgs='--import tsx "'+(Join-Path $programDir 'bridge.mjs')+'" verify-ytdlp'
-    $binPath=Join-Path $tempRoot '_cache\bin\yt-dlp.exe'
-    if(Test-Path -LiteralPath $binPath){Notice 'yt-dlp este deja prezent; verificarea actualizarilor se face la descarcare.';$r=0}
-    else{$r=RunInstallerCommand $node $verifyArgs $programDir 'Instalez yt-dlp pentru prima utilizare...' $true}
-    if($r -ne 0){Notice 'yt-dlp va fi verificat automat la prima descarcare; installerul poate continua.'}
-    Step 8 'Instalare finalizata.'
-    Notice 'INSTALARE FINALIZATA. Testeaza mai intai o singura categorie.'
-    $script:componentLabel.Text='Instalare completa.'
-    ShowInfo 'Instalarea s-a terminat. Pe Desktop exista Instant Downloader. Prima data foloseste Login Skool daca nu ai transferat sesiunea.'
-    Start-Process -FilePath $shortcut.FullName
-    $script:isInstalling=$false
-    $form.Close()
-  }catch{
-    Notice ('INSTALARE OPRITA: '+$_)
-    Step 0 'Instalare oprita: corecteaza eroarea si apasa REINCEARCA'
-    $stepLabel.ForeColor=[Drawing.ColorTranslator]::FromHtml('#b82f3c')
-    $installBtn.Text='REINCEARCA INSTALAREA'
-    ShowInfo ("Instalarea nu s-a terminat:`r`n"+$_)
-  }finally{$script:isInstalling=$false;$installBtn.Enabled=$true;$cancelBtn.Enabled=$false}
-})
-Notice 'Alege locatiile si apasa INSTALEAZA. Internetul este necesar la prima instalare.'
-[void]$form.ShowDialog()
