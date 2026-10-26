@@ -1,8 +1,5 @@
 name: RC13 Skool course order and lesson sidebar (integration)
 on:
-  push:
-    paths:
-      - '.github/workflows/release-rc13.yml'
   workflow_dispatch:
 permissions:
   contents: write
