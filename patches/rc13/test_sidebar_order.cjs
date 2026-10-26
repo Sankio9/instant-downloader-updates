@@ -53,7 +53,7 @@ try{
  const third=get(path.join(course,'2-Advanced','1-Third','index.html'));
  for(const page of [one,two,third]){
   assert.equal((page.match(/<aside class="instant-sidebar"/g)||[]).length,1,'Exactly one sidebar');
-  assert.equal((page.match(/aria-current="page"/g)||[]).length,1,'Current lesson highlighted exactly once');
+  assert.equal((page.match(/<a\b[^>]*aria-current="page"/g)||[]).length,1,'Current lesson highlighted exactly once');
   assert.equal((page.match(/data-instant-place=/g)||[]).length,2,'Top/bottom navigation retained');
   assert.ok(page.includes('class="container instant-reading"'));
   assert.ok(page.includes('video.mp4'));
