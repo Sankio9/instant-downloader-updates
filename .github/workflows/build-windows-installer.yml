@@ -1,0 +1,142 @@
+name: Build and verify Windows installer (PC2)
+
+on:
+  push:
+    paths:
+      - ".github/workflows/build-windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Download verified app payload
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $url = 'https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC7_code_only.zip'
+          $archive = Join-Path $PWD 'app-rc7.zip'
+          Invoke-WebRequest -Uri $url -OutFile $archive -UseBasicParsing -TimeoutSec 120
+          $expected='bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'
+          $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath $archive).Hash.ToLowerInvariant()
+          if($actual -ne $expected){throw "Downloaded payload SHA256 mismatch $actual"}
+          Expand-Archive -LiteralPath $archive -DestinationPath 'payload' -Force
+          Copy-Item -LiteralPath 'installer/Install_Instant_Downloader.ps1' -Destination 'payload/Install_Instant_Downloader.ps1' -Force
+          if((Get-Content -Raw -Encoding UTF8 'payload/package.json' | ConvertFrom-Json).version -ne '1.8.0-rc.7'){throw 'Bad package version'}
+          $appFiles=@('README_RO.txt','package.json','Instant_Downloader.ps1','START_INSTANT_DOWNLOADER.cmd','supervisor.cjs','bridge.mjs','audit_archive.cjs','selection.cjs','check_update_notice.cjs','patch_progress.cjs','DIAGNOSTIC_INSTANT_DOWNLOADER.cmd','Diagnostics.ps1','Preflight.ps1','Update_Instant_Downloader.ps1','Apply_Update.ps1')
+          foreach($name in $appFiles){if(!(Test-Path -LiteralPath (Join-Path $PWD ('payload/'+$name)))){throw "Missing application file: $name"}}
+          if(-not (Select-String -LiteralPath 'payload/Install_Instant_Downloader.ps1' -SimpleMatch -Quiet 'https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/latest.json')){throw 'Public update source not included in installer'}
+          if(-not (Select-String -LiteralPath 'payload/Install_Instant_Downloader.ps1' -SimpleMatch -Quiet '$script:installedOk=$true')){throw 'Installer success state missing'}
+          $bad=@(Get-ChildItem 'payload' -Force | Where-Object {$_.Name -in @('config.json','.auth','cookies.txt','node_modules','storage_state.json')})
+          if($bad.Count){throw "Sensitive files detected: $($bad.Name -join ', ')"}
+
+      - name: Parse every PowerShell script using Windows PowerShell 5.1
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($p in Get-ChildItem -Path 'payload' -Filter '*.ps1'){
+            $t=$null;$e=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($p.FullName,[ref]$t,[ref]$e)
+            if($e.Count){$e|ForEach-Object{Write-Host $_.Message};throw "Invalid PowerShell: $($p.Name)"}
+            Write-Host "PASS syntax: $($p.Name)"
+          }
+
+      - name: Static regression test suite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location payload
+          try{
+            foreach($test in @('test_v16.cjs','test_v17.cjs','test_audit.cjs','test_upgrade.cjs')){
+              node $test
+              if($LASTEXITCODE -ne 0){throw "Regression failed: $test"}
+            }
+            $target='test_local.cjs'
+            $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+            $src=[IO.File]::ReadAllText((Join-Path $PWD $target))
+            if($src.Contains($old)){
+              [IO.File]::WriteAllText((Join-Path $PWD $target),$src.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))
+            }
+          }finally{Pop-Location}
+
+      - name: Install and check Node.js dependencies in Windows CI
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Push-Location payload
+          try{
+            npm install --no-audit --no-fund --no-save typescript@5.9.3
+            if($LASTEXITCODE -ne 0){throw 'npm install failed on Windows'}
+            node test_local.cjs
+            if($LASTEXITCODE -ne 0){throw 'test_local failed on Windows'}
+            node --import tsx -e "console.log('PASS tsx')"
+            if($LASTEXITCODE -ne 0){throw 'tsx execution failed on Windows'}
+          }finally{Pop-Location}
+          Remove-Item -LiteralPath 'payload/node_modules' -Force -Recurse -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath 'payload/package-lock.json' -Force -ErrorAction SilentlyContinue
+          Remove-Item -LiteralPath 'payload/app-rc7.zip' -Force -ErrorAction SilentlyContinue
+
+      - name: Install Inno Setup compiler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $iscc='C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
+          if(!(Test-Path $iscc)){
+            choco install innosetup -y --no-progress --limit-output
+            if($LASTEXITCODE -ne 0){throw 'Inno Setup installation failed'}
+          }
+          if(!(Test-Path $iscc)){throw 'Inno Setup compiler not found'}
+
+      - name: Compile executable installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' 'installer/InstantDownloader.iss'
+          if($LASTEXITCODE -ne 0){throw 'ISCC compilation failed'}
+          $exe='installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe'
+          if(!(Test-Path -LiteralPath $exe)){throw 'Installer executable missing'}
+          if((Get-Item $exe).Length -lt 300000){throw 'Installer executable suspiciously small'}
+          $hash=(Get-FileHash $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256' -Value ($hash + '  Instant_Downloader_Setup_v1.8_RC7_PC2.exe') -Encoding ascii
+          Write-Host "EXE_BYTES=$((Get-Item $exe).Length)"
+          Write-Host "EXE_SHA256=$hash"
+
+      - name: Silent EXE extraction smoke test
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $exe=Join-Path $PWD 'installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe'
+          $p=Start-Process -FilePath $exe -ArgumentList '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART' -PassThru -Wait
+          if($p.ExitCode -ne 0){throw "EXE smoke install failed with exit code $($p.ExitCode)"}
+          Write-Host 'PASS Windows EXE bootstrap extraction (dependency install deliberately skipped in silent mode)'
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Instant-Downloader-Windows-Installer-PC2
+          path: |
+            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe
+            installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256
+
+      - name: Publish PC2 validation prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference='Stop'
+          $tag='v1.8.0-rc.7-pc2'
+          $files=@('installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe','installer/output/Instant_Downloader_Setup_v1.8_RC7_PC2.exe.sha256')
+          gh release view $tag *> $null
+          if($LASTEXITCODE -eq 0){
+            gh release upload $tag $files --clobber
+          }else{
+            gh release create $tag $files --title 'Instant Downloader RC7 - Windows PC2 installer' --prerelease --notes 'Windows EXE installer for clean-PC testing. Runs the interactive dependency/setup wizard. SHA-256 and Windows PowerShell parser + local Node regression checks are verified by GitHub Actions. Actual Skool login/download and interactive install on PC2 still require user validation. Windows SmartScreen can warn because installer is unsigned. Not a stable final release.' --target main
+          }
+          if($LASTEXITCODE -ne 0){throw 'Publishing the PC2 prerelease failed'}
