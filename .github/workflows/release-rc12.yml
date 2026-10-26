@@ -34,7 +34,7 @@ jobs:
           }
           # Test-only fixture: not shipped because RC7 updaters reject new file names.
           Copy-Item -LiteralPath patches/rc12/test_lesson_ui.cjs -Destination payload/test_lesson_ui.cjs
-          Copy-Item -LiteralPath patches/rc9/test_lesson_documents.cjs -Destination payload/test_lesson_documents.cjs
+          Copy-Item -LiteralPath patches/rc12/test_lesson_documents.cjs -Destination payload/test_lesson_documents.cjs
           if((Get-Content payload/package.json -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.12'){throw 'RC12 version mismatch'}
           $code=Get-Content payload/bridge.mjs -Raw
           if(!$code.Contains('selectionApi.uiApi') -or !$code.Contains('selectionApi.documentsApi')){throw 'Bundled compatibility modules missing'}
