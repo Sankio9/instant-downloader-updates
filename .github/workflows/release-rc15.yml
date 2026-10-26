@@ -1,8 +1,5 @@
 name: RC15 Learning Workspace structural layout
 on:
-  push:
-    paths:
-      - '.github/workflows/release-rc15.yml'
   workflow_dispatch:
 permissions:
   contents: write
