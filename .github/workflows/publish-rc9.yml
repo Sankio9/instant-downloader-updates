@@ -1,0 +1,144 @@
+name: Validate and publish RC9 lesson documents
+on:
+  push:
+    paths:
+      - '.github/workflows/publish-rc9.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Download verified RC8 release and apply RC9 patch
+        id: prepare
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $oldManifest=Get-Content latest.json -Raw | ConvertFrom-Json
+          if($oldManifest.version -ne '1.8.0-rc.8'){throw 'Base update manifest must be RC8'}
+          $archive='rc8.zip'
+          Invoke-WebRequest -Uri $oldManifest.package_url -OutFile $archive -UseBasicParsing -TimeoutSec 120
+          $actual=(Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+          if($actual -ne $oldManifest.sha256){throw 'RC8 SHA-256 mismatch'}
+          Expand-Archive -LiteralPath $archive -DestinationPath 'payload' -Force
+          $changes=@('lesson_documents.cjs','test_lesson_documents.cjs','bridge.mjs','Update_Instant_Downloader.ps1','Apply_Update.ps1','Install_Instant_Downloader.ps1','Instant_Downloader.ps1','package.json')
+          foreach($name in $changes){
+            Copy-Item -LiteralPath (Join-Path 'patches/rc9' $name) -Destination (Join-Path 'payload' $name) -Force
+          }
+          $version=(Get-Content payload/package.json -Raw | ConvertFrom-Json).version
+          if($version -ne '1.8.0-rc.9'){throw 'Not RC9'}
+          foreach($bad in @('config.json','cookies.txt','.auth','storage_state.json','node_modules')){
+            if(Test-Path (Join-Path 'payload' $bad)){throw 'Sensitive or machine-specific data in release'}
+          }
+      - name: Validate PowerShell 5.1 source
+        id: powershell
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in Get-ChildItem payload -Filter '*.ps1'){
+            $tok=$null;$err=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tok,[ref]$err)
+            if($err.Count){$err|ForEach-Object{Write-Host $_};throw "Invalid script $($file.Name)"}
+          }
+          $u=Get-Content payload/Update_Instant_Downloader.ps1 -Raw
+          $a=Get-Content payload/Apply_Update.ps1 -Raw
+          $i=Get-Content payload/Install_Instant_Downloader.ps1 -Raw
+          foreach($s in @($u,$a,$i)){if(!$s.Contains("'lesson_documents.cjs'")){throw 'Installer/updater does not preserve lesson documents module'}}
+      - name: Run offline document archival and security regression tests
+        id: test_docs
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check lesson_documents.cjs
+          if($LASTEXITCODE){throw 'New code syntax failed'}
+          node --check bridge.mjs
+          if($LASTEXITCODE){throw 'Integration syntax failed'}
+          node test_lesson_documents.cjs
+          if($LASTEXITCODE){throw 'Lesson document regression failed'}
+          node test_v17.cjs
+          if($LASTEXITCODE){throw 'Classroom catalog regression failed'}
+          node test_v16.cjs
+          if($LASTEXITCODE){throw 'v16 regression failed'}
+          node test_audit.cjs
+          if($LASTEXITCODE){throw 'Offline audit regression failed'}
+          node test_upgrade.cjs
+          if($LASTEXITCODE){throw 'Updater regression failed'}
+      - name: Test runtime dependency compatibility
+        id: runtime
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --no-audit --no-fund --no-save typescript@5.9.3
+          if($LASTEXITCODE){throw 'Cannot install app dependencies'}
+          $source=Get-Content test_local.cjs -Raw
+          $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+          if($source.Contains($old)){
+            [IO.File]::WriteAllText((Join-Path $PWD 'test_local.cjs'),$source.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))
+          }
+          node test_local.cjs
+          if($LASTEXITCODE){throw 'Local app test failed'}
+      - name: Create RC9 update ZIP + matching SHA-256 manifest
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item payload/node_modules -Force -Recurse -ErrorAction SilentlyContinue
+          Remove-Item payload/package-lock.json -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory releases -Force | Out-Null
+          $zip='releases/Instant_Downloader_v1.8_RC9_code_only.zip'
+          $files=@(Get-ChildItem payload -File | Select-Object -ExpandProperty FullName)
+          Compress-Archive -LiteralPath $files -DestinationPath $zip -CompressionLevel Optimal
+          $v=Join-Path $env:RUNNER_TEMP 'verify-rc9'
+          Expand-Archive $zip -DestinationPath $v
+          if(!(Test-Path (Join-Path $v 'lesson_documents.cjs'))){throw 'New module missing in actual ZIP'}
+          if(!(Test-Path (Join-Path $v 'test_lesson_documents.cjs'))){throw 'Document regression test missing from ZIP'}
+          $hash=(Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest=@{
+            version='1.8.0-rc.9'
+            channel='rc'
+            sha256=$hash
+            package_url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC9_code_only.zip'
+            notes='RC9: Download supported public lesson documents into resources/, preserve original links and add Deschide local; report inaccessible files; safe size/type limits.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD 'latest.json'),($manifest | ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+          Write-Host "RC9_SHA256=$hash"
+      - name: Publish only after all QA succeeds
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json releases/Instant_Downloader_v1.8_RC9_code_only.zip
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Publish RC9 offline lesson document archiving and manifest'
+            git push
+            if($LASTEXITCODE){throw 'Cannot publish RC9 manifest'}
+          }
+      - name: Record CI outcome
+        if: always()
+        shell: pwsh
+        run: |
+          $note=@"
+          # RC9 Windows release QA
+          RC8 package and RC9 sources: ${{ steps.prepare.outcome }}
+          PowerShell 5.1 syntax: ${{ steps.powershell.outcome }}
+          Document archiving/security tests: ${{ steps.test_docs.outcome }}
+          Dependency compatibility: ${{ steps.runtime.outcome }}
+          RC9 archive integrity: ${{ steps.package.outcome }}
+          Public RC9 updater publication: ${{ steps.publish.outcome }}
+          Live Google Drive/Skool authorization and real remote file downloads are not tested in this CI.
+          "@
+          [IO.File]::WriteAllText((Join-Path $PWD 'RC9_DOCUMENTS_QA.md'),$note,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RC9_DOCUMENTS_QA.md
+          if(-not (git diff --cached --quiet)){git commit -m 'Record RC9 document archiver QA';git push}
