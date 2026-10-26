@@ -1,0 +1,202 @@
+name: RC12 simplified progress and course layout
+on:
+  push:
+    paths:
+      - '.github/workflows/release-rc12.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate RC11 SHA and assemble RC12 files
+        id: prep
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content latest.json -Raw | ConvertFrom-Json
+          if($m.version -ne '1.8.0-rc.11'){throw 'Expected RC11 base release'}
+          Invoke-WebRequest -Uri $m.package_url -OutFile old.zip -UseBasicParsing -TimeoutSec 120
+          if((Get-FileHash old.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $m.sha256){throw 'RC11 base checksum invalid'}
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z=[IO.Compression.ZipFile]::OpenRead((Join-Path $PWD old.zip))
+          try{$oldFileNames=@($z.Entries | ForEach-Object {$_.FullName})}finally{$z.Dispose()}
+          if($oldFileNames.Count -lt 20){throw 'Incomplete RC11 baseline'}
+          Expand-Archive old.zip -DestinationPath payload
+          foreach($name in @('Instant_Downloader.ps1','Install_Instant_Downloader.ps1','package.json','selection.cjs')){
+            Copy-Item -LiteralPath (Join-Path patches/rc12 $name) -Destination (Join-Path payload $name) -Force
+          }
+          # Test-only fixture: not shipped because RC7 updaters reject new file names.
+          Copy-Item -LiteralPath patches/rc12/test_lesson_ui.cjs -Destination payload/test_lesson_ui.cjs
+          Copy-Item -LiteralPath patches/rc9/test_lesson_documents.cjs -Destination payload/test_lesson_documents.cjs
+          if((Get-Content payload/package.json -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.12'){throw 'RC12 version mismatch'}
+          $code=Get-Content payload/bridge.mjs -Raw
+          if(!$code.Contains('selectionApi.uiApi') -or !$code.Contains('selectionApi.documentsApi')){throw 'Bundled compatibility modules missing'}
+          foreach($file in @('config.json','cookies.txt','.auth','storage_state.json','node_modules')){
+            if(Test-Path (Join-Path payload $file)){throw 'Sensitive machine data included'}
+          }
+
+      - name: PowerShell 5.1 parser validation
+        id: ps
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($file in Get-ChildItem payload -Filter '*.ps1'){
+            $tokens=$null;$errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file.FullName,[ref]$tokens,[ref]$errors)
+            if($errors.Count){$errors|ForEach-Object{Write-Host $_};throw "Invalid PowerShell: $($file.Name)"}
+          }
+
+      - name: Live progress controls test on Windows Forms
+        id: ui
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          Add-Type -AssemblyName System.Windows.Forms
+          Add-Type -AssemblyName System.Drawing
+          $source=Get-Content -LiteralPath payload/Instant_Downloader.ps1 -Raw -Encoding UTF8
+          if(!$source.Contains("MakeLabel (Tr 'language') 600 22 100 24")){throw 'Language caption will be clipped'}
+          if(!$source.Contains('$languageBox.SetBounds(708,17,168,30)')){throw 'Language selector is too narrow'}
+          if($source.Contains("[                    ]") -or $source.Contains("('='+")){throw 'Old ASCII progress bar still present'}
+          $from=$source.IndexOf('function RefreshProgressArea(){')
+          $to=$source.IndexOf('function GetProcessTree(',$from)
+          if($from -lt 0 -or $to -le $from){throw 'Progress UI methods missing'}
+          function Tr([string]$key){$h=@{noActive='No active downloads';completedSuccess='Download completed successfully';completedWithErrors='Download completed with errors:'};return [string]$h[$key]}
+          function Color([string]$hex){return [Drawing.ColorTranslator]::FromHtml($hex)}
+          $script:entries=@()
+          $script:slotItems=@{}
+          $script:slotOrder=New-Object Collections.ArrayList
+          $script:failedVideos=@{}
+          $script:completeErrors=0
+          $script:completionTextKey=''
+          $script:progressSummary=New-Object Windows.Forms.Label
+          foreach($i in 0..3){
+            $script:entries+=@{index=$i;name=(New-Object Windows.Forms.Label);bar=(New-Object Windows.Forms.ProgressBar);pct=(New-Object Windows.Forms.Label);active=$false;finished=$false}
+          }
+          . ([scriptblock]::Create($source.Substring($from,$to-$from)))
+          ResetSlots
+          if(@($script:entries|Where-Object {$_.name.Visible}).Count -ne 0){throw 'Idle must hide all progress rows'}
+          if($script:progressSummary.Text -ne 'No active downloads'){throw 'Idle status missing'}
+          SetSlot 'lesson-a' 'Lesson A' 30
+          if(@($script:entries|Where-Object {$_.name.Visible}).Count -ne 1){throw 'Only one started lesson should be visible'}
+          if(@($script:entries|Where-Object {$_.pct.Visible -and $_.pct.Text -eq '30%'}).Count -ne 1){throw 'Show percentage only, not ASCII text'}
+          SetSlot 'lesson-b' 'Lesson B' 54
+          if(@($script:entries|Where-Object {$_.name.Visible}).Count -ne 2){throw 'Two active lessons should be visible'}
+          SetSlot 'lesson-a' 'Lesson A' 100 'done'
+          if(@($script:entries|Where-Object {$_.name.Visible}).Count -ne 1){throw 'Completed lesson should disappear from active area'}
+          SetSlot 'lesson-b' 'Lesson B' 0 'failed'
+          if(@($script:entries|Where-Object {$_.name.Visible}).Count -ne 0){throw 'No phantom progress bars after finishing'}
+          $script:completionTextKey='completedSuccess'
+          RefreshProgressArea
+          if(!$script:progressSummary.Visible -or $script:progressSummary.Text -ne 'Download completed successfully'){throw 'Success message missing'}
+          $script:completeErrors=2
+          $script:completionTextKey='completedWithErrors'
+          RefreshProgressArea
+          if($script:progressSummary.Text -ne 'Download completed with errors: 2'){throw 'Error count/result missing'}
+          Write-Host 'PASS WinForms: language label, zero idle rows, two active rows, no ASCII, clean completion/error state'
+
+      - name: Course order, offline HTML and regression suites
+        id: tests
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check selection.cjs
+          if($LASTEXITCODE){throw 'JS bundling failed'}
+          node --check bridge.mjs
+          if($LASTEXITCODE){throw 'Bridge syntax failed'}
+          foreach($name in @('test_lesson_ui.cjs','test_lesson_documents.cjs','test_v17.cjs','test_v16.cjs','test_audit.cjs','test_upgrade.cjs')){
+            node $name
+            if($LASTEXITCODE){throw "Regression failed: $name"}
+          }
+
+      - name: Node integration test on Windows
+        id: node
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          npm install --no-save --no-audit --no-fund typescript@5.9.3
+          if($LASTEXITCODE){throw 'npm installation failed'}
+          $src=Get-Content test_local.cjs -Raw
+          $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+          if($src.Contains($old)){[IO.File]::WriteAllText((Join-Path $PWD test_local.cjs),$src.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))}
+          node test_local.cjs
+          if($LASTEXITCODE){throw 'Local integration failed'}
+
+      - name: Package RC12 using RC11 verified ZIP file inventory
+        id: package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          Remove-Item payload/node_modules -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item payload/package-lock.json -Force -ErrorAction SilentlyContinue
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z=[IO.Compression.ZipFile]::OpenRead((Join-Path $PWD old.zip))
+          try{$oldNames=@($z.Entries | ForEach-Object {$_.Name})}finally{$z.Dispose()}
+          New-Item -ItemType Directory releases -Force | Out-Null
+          $files=@(Get-ChildItem payload -File | Where-Object {$oldNames -contains $_.Name} | Select-Object -ExpandProperty FullName)
+          $dst='releases/Instant_Downloader_v1.8_RC12_code_only.zip'
+          Compress-Archive -LiteralPath $files -DestinationPath $dst -CompressionLevel Optimal
+          $z=[IO.Compression.ZipFile]::OpenRead((Join-Path $PWD $dst))
+          try{
+            $names=@($z.Entries|ForEach-Object{$_.FullName})
+            if($names.Count -ne $oldNames.Count){throw 'RC12 ZIP inventory differs from RC11'}
+            foreach($n in $names){if($oldNames -notcontains $n){throw "Legacy updater would reject ZIP file $n"}}
+            foreach($n in $oldNames){if($names -notcontains $n){throw "Missing baseline file $n"}}
+            foreach($deny in @('test_lesson_ui.cjs','test_lesson_documents.cjs','lesson_ui.cjs','lesson_documents.cjs','config.json','cookies.txt')){
+              if($names -contains $deny){throw "Blocked release file included: $deny"}
+            }
+            Write-Host ('PASS: '+$names.Count+' known ZIP entries match previous RC11')
+          }finally{$z.Dispose()}
+          $sha=(Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest=@{
+            version='1.8.0-rc.12'
+            channel='rc'
+            sha256=$sha
+            package_url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC12_code_only.zip'
+            notes='RC12: only active progress bars and percentages; clear completed/failed result; readable language selector; clean course lesson list with Skool metadata order, compact navigation and Start course.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD latest.json),($manifest|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+          Write-Host "RC12_SHA256=$sha"
+
+      - name: Publish new update feed after QA success
+        id: publish
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json releases/Instant_Downloader_v1.8_RC12_code_only.zip
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Publish RC12 simpler desktop progress and polished course pages'
+            git push
+            if($LASTEXITCODE){throw 'Cannot publish release'}
+          }
+
+      - name: Record RC12 test results
+        if: always()
+        shell: pwsh
+        run: |
+          $report=@"
+          # RC12 Windows QA
+          RC11 baseline: ${{ steps.prep.outcome }}
+          PowerShell 5.1 parser: ${{ steps.ps.outcome }}
+          Live WinForms progress UI state tests: ${{ steps.ui.outcome }}
+          Skool order/HTML/navigation regressions: ${{ steps.tests.outcome }}
+          Node integration: ${{ steps.node.outcome }}
+          Legacy update ZIP file inventory: ${{ steps.package.outcome }}
+          Public update feed: ${{ steps.publish.outcome }}
+          PC2 visual acceptance test remains necessary.
+          "@
+          [IO.File]::WriteAllText((Join-Path $PWD RC12_GUI_QA.md),$report,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RC12_GUI_QA.md
+          if(-not (git diff --cached --quiet)){git commit -m 'Record RC12 Windows GUI QA';git push}
