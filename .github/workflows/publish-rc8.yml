@@ -1,8 +1,5 @@
 name: QA and publish Instant Downloader RC8 Classroom fix
 on:
-  push:
-    paths:
-      - ".github/workflows/publish-rc8.yml"
   workflow_dispatch:
 permissions:
   contents: write
