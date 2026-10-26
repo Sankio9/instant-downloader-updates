@@ -1,4 +1,4 @@
-name: RC12 simplified progress and course layout
+name: RC12 simplified progress and course layout (rerun)
 on:
   push:
     paths:
