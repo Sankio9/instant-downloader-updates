@@ -1,7 +1,7 @@
 {
-  "notes": "RC11 fixes updater ZIP rejected error for older versions. Bundles course navigation, Inter-style typography, offline lesson documents and Skool catalog fixes into approved files.",
-  "sha256": "027276c80773c5b582d77fbe2ed955ae422611bf3cd9fef0773ec9d27c305711",
-  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC11_code_only.zip",
+  "notes": "RC12: only active progress bars and percentages; clear completed/failed result; readable language selector; clean course lesson list with Skool metadata order, compact navigation and Start course.",
   "channel": "rc",
-  "version": "1.8.0-rc.11"
+  "package_url": "https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC12_code_only.zip",
+  "version": "1.8.0-rc.12",
+  "sha256": "5533e285481f3c1c63e9d3676e591577c76e30b6922b80935712eecb293cb999"
 }
