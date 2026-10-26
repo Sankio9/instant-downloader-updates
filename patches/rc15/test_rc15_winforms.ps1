@@ -128,24 +128,37 @@ if($script:updatePanel.Bounds.X -ne 204 -or $script:updatePanel.Bounds.Width -ne
 if($script:activityCard.Bounds.Bottom -ge $script:historyCard.Bounds.Top){throw 'Progress and history cards overlap'}
 if($script:historyCard.Bounds.Bottom -ge $script:logCard.Bounds.Top){throw 'History and log cards overlap'}
 if($script:actionsCard.Bounds.Bottom -ge $script:activityCard.Bounds.Top){throw 'Actions and progress cards overlap'}
-# Render entire intended desktop layout before Windows scales the window to
-# a small headless runner's desktop resolution.
-if($env:RC15_SCREENSHOT_PATH){
- $destination=$env:RC15_SCREENSHOT_PATH
- [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
- $form.CreateControl()
- $bitmap=New-Object Drawing.Bitmap($form.Width,$form.Height)
- try{
-  $form.DrawToBitmap($bitmap,(New-Object Drawing.Rectangle(0,0,$form.Width,$form.Height)))
-  $bitmap.Save($destination,[Drawing.Imaging.ImageFormat]::Png)
-  Write-Host ('Full layout screenshot: '+$destination)
- }finally{$bitmap.Dispose()}
-}
 $form.ShowInTaskbar=$false
 [void]$form.Show()
 [Windows.Forms.Application]::DoEvents()
 if(-not $script:mainContent.AutoScroll){throw 'Compact screens would clip the content'}
 if($script:mainContent.Bounds.Right -gt $form.ClientSize.Width){throw 'Viewport is wider than form'}
+
+# Draw the live initialized content and sidebar separately so small hosted-runner
+# desktops do not clip the right-hand controls in a sanitized QA preview.
+if($env:RC15_SCREENSHOT_PATH){
+ $destination=$env:RC15_SCREENSHOT_PATH
+ [void][IO.Directory]::CreateDirectory((Split-Path -Parent $destination))
+ $script:mainContent.SetBounds(204,0,986,908)
+ $script:mainContent.AutoScrollPosition=New-Object Drawing.Point(0,0)
+ [Windows.Forms.Application]::DoEvents()
+ $canvas=New-Object Drawing.Bitmap(1190,908)
+ $navBmp=New-Object Drawing.Bitmap(203,908)
+ $contentBmp=New-Object Drawing.Bitmap(986,908)
+ $graphics=[Drawing.Graphics]::FromImage($canvas)
+ try{
+  $graphics.Clear((Color '#F4F7FC'))
+  $script:sideNav.DrawToBitmap($navBmp,(New-Object Drawing.Rectangle(0,0,203,908)))
+  $script:mainContent.DrawToBitmap($contentBmp,(New-Object Drawing.Rectangle(0,0,986,908)))
+  $graphics.DrawImageUnscaled($navBmp,0,0)
+  $graphics.DrawImageUnscaled($contentBmp,204,0)
+  $canvas.Save($destination,[Drawing.Imaging.ImageFormat]::Png)
+  Write-Host ('Full live control screenshot: '+$destination)
+ }finally{
+  $graphics.Dispose();$navBmp.Dispose();$contentBmp.Dispose();$canvas.Dispose()
+ }
+}
+
 $script:navUpdates.PerformClick()
 if(-not $script:openedUpdates){throw 'Updates side navigation does not open view'}
 Write-Host 'PASS: RC15 structural card layout, input borders, no overlaps, four tabs, library browser, working sidebar, updates'
