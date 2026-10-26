@@ -1,0 +1,147 @@
+name: RC11 legacy-updater compatibility release
+on:
+  push:
+    paths:
+      - '.github/workflows/release-rc11-compat.yml'
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assemble RC11 from verified published RC10
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $m=Get-Content latest.json -Raw | ConvertFrom-Json
+          if($m.version -ne '1.8.0-rc.10'){throw 'Base release is not RC10'}
+          Invoke-WebRequest $m.package_url -OutFile old.zip -UseBasicParsing -TimeoutSec 120
+          if((Get-FileHash old.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $m.sha256){throw 'Base SHA mismatch'}
+          Expand-Archive -LiteralPath old.zip -DestinationPath payload -Force
+          foreach($n in @('selection.cjs','bridge.mjs','test_lesson_documents.cjs','test_lesson_ui.cjs','Instant_Downloader.ps1','Install_Instant_Downloader.ps1','package.json')){
+            Copy-Item -LiteralPath (Join-Path patches/rc11 $n) -Destination (Join-Path payload $n) -Force
+          }
+          if((Get-Content payload/package.json -Raw | ConvertFrom-Json).version -ne '1.8.0-rc.11'){throw 'RC11 package version invalid'}
+          $b=Get-Content payload/bridge.mjs -Raw
+          if($b.Contains("from './lesson_ui.cjs'") -or $b.Contains("from './lesson_documents.cjs'")){throw 'Separate modules still required by app'}
+          if(!$b.Contains('selectionApi.uiApi') -or !$b.Contains('selectionApi.documentsApi')){throw 'Bundled module exports missing'}
+      - name: Windows PowerShell 5.1 syntax verification
+        shell: powershell
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($p in Get-ChildItem payload -Filter '*.ps1'){
+            $t=$null;$e=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($p.FullName,[ref]$t,[ref]$e)
+            if($e.Count){$e | ForEach-Object{Write-Host $_};throw "PowerShell invalid: $($p.Name)"}
+          }
+      - name: Test course catalog, document backup, navigation and update
+        shell: pwsh
+        working-directory: payload
+        run: |
+          $ErrorActionPreference='Stop'
+          node --check selection.cjs
+          if($LASTEXITCODE){throw 'Bundled code JS syntax invalid'}
+          node --check bridge.mjs
+          if($LASTEXITCODE){throw 'App bridge JS syntax invalid'}
+          foreach($t in @('test_lesson_ui.cjs','test_lesson_documents.cjs','test_v17.cjs','test_v16.cjs','test_audit.cjs','test_upgrade.cjs')){
+            node $t
+            if($LASTEXITCODE){throw "Test failed: $t"}
+          }
+      - name: Test Node dependencies and core integration
+        shell: pwsh
+        working-directory: payload
+        run: |
+          npm install --no-save --no-audit --no-fund typescript@5.9.3
+          if($LASTEXITCODE){throw 'Cannot install dependencies'}
+          $p=Join-Path $PWD test_local.cjs
+          $s=[IO.File]::ReadAllText($p)
+          $old="require('/opt/nvm/versions/node/v22.16.0/lib/node_modules/typescript')"
+          if($s.Contains($old)){[IO.File]::WriteAllText($p,$s.Replace($old,"require('typescript')"),[Text.UTF8Encoding]::new($false))}
+          node test_local.cjs
+          if($LASTEXITCODE){throw 'Core integration test failed'}
+      - name: Verify every ZIP file against actual RC7/RC8/RC9/RC10 updaters
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $olds=@(
+            @{v='RC7';sha='bc0e162e1e41367064353759bf32925a243574d9dd9edd055f0d5b0bbc4597b9'},
+            @{v='RC8';sha='59e0b7090ba93a17a2c0c625830d53d06f1609cc876d4597628ca316bc03f39d'},
+            @{v='RC9';sha='ce35d88390c1a05ce533ba2c1ab7cf6fb2370d533e87fd41cce1ebc98b868cfb'},
+            @{v='RC10';sha='f10dcee5f32424454895de44a3a78546702a7bbe59d4e8170a399779990e1d5d'}
+          )
+          $common=@()
+          foreach($old in $olds){
+            $url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_'+$old.v+'_code_only.zip'
+            $archive=$old.v+'.zip'
+            Invoke-WebRequest $url -OutFile $archive -UseBasicParsing -TimeoutSec 120
+            if((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $old.sha){throw "Legacy $($old.v) checksum mismatch"}
+            $dir=Join-Path legacy $old.v
+            Expand-Archive -LiteralPath $archive -DestinationPath $dir
+            $source=Get-Content (Join-Path $dir 'Update_Instant_Downloader.ps1') -Raw
+            $match=[regex]::Match($source,'\$allow\s*=\s*@\((?<names>[^\r\n]+)\)')
+            if(!$match.Success){throw "Legacy $($old.v) updater allowlist unreadable"}
+            $allow=@([regex]::Matches($match.Groups['names'].Value,"'([^']+)'") | ForEach-Object {$_.Groups[1].Value})
+            if(!$allow.Count){throw "Legacy $($old.v) updater allowlist is empty"}
+            if(!$common.Count){$common=$allow}else{$common=@($common | Where-Object {$allow -contains $_})}
+            Write-Host "$($old.v): $($allow.Count) permitted ZIP filenames"
+          }
+          $required=@('Instant_Downloader.ps1','Update_Instant_Downloader.ps1','Apply_Update.ps1','bridge.mjs','audit_archive.cjs','selection.cjs','check_update_notice.cjs','package.json','supervisor.cjs','patch_progress.cjs','INSTALL_INSTANT_DOWNLOADER.cmd','Install_Instant_Downloader.ps1')
+          foreach($r in $required){if($common -notcontains $r){throw "File incompatible with old updaters: $r"};if(!(Test-Path (Join-Path payload $r))){throw "Missing required $r"}}
+          New-Item -ItemType Directory releases -Force | Out-Null
+          $safe=@(Get-ChildItem payload -File | Where-Object {$common -contains $_.Name} | Select-Object -ExpandProperty FullName)
+          $zip='releases/Instant_Downloader_v1.8_RC11_code_only.zip'
+          Compress-Archive -LiteralPath $safe -DestinationPath $zip -CompressionLevel Optimal
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $read=[IO.Compression.ZipFile]::OpenRead((Join-Path $PWD $zip))
+          try{
+            $names=@($read.Entries | ForEach-Object {$_.FullName})
+            foreach($n in $names){
+              if($common -notcontains $n){throw "Old updater rejects ZIP filename: $n"}
+              if($n.Contains('/') -or $n.Contains('..')){throw "Invalid ZIP path: $n"}
+            }
+            foreach($r in $required){if($names -notcontains $r){throw "Incomplete release ZIP: $r"}}
+            foreach($bad in @('lesson_ui.cjs','lesson_documents.cjs','test_lesson_ui.cjs','test_lesson_documents.cjs','config.json','cookies.txt')){if($names -contains $bad){throw "Forbidden RC11 ZIP entry: $bad"}}
+            Write-Host ('PASS: '+$names.Count+' ZIP entries compatible with RC7, RC8, RC9 and RC10')
+          }finally{$read.Dispose()}
+      - name: Generate verified RC11 release manifest
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $name='releases/Instant_Downloader_v1.8_RC11_code_only.zip'
+          $sha=(Get-FileHash $name -Algorithm SHA256).Hash.ToLowerInvariant()
+          $manifest=@{
+            version='1.8.0-rc.11'
+            channel='rc'
+            sha256=$sha
+            package_url='https://raw.githubusercontent.com/Sankio9/instant-downloader-updates/main/releases/Instant_Downloader_v1.8_RC11_code_only.zip'
+            notes='RC11 fixes updater ZIP rejected error for older versions. Bundles course navigation, Inter-style typography, offline lesson documents and Skool catalog fixes into approved files.'
+          }
+          [IO.File]::WriteAllText((Join-Path $PWD latest.json),($manifest|ConvertTo-Json -Depth 4),[Text.UTF8Encoding]::new($false))
+          Write-Host ('RC11 SHA256: '+$sha)
+      - name: Publish RC11 only if every verification succeeded
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add latest.json releases/Instant_Downloader_v1.8_RC11_code_only.zip
+          if(-not (git diff --cached --quiet)){
+            git commit -m 'Publish RC11 recovery build accepted by legacy updaters'
+            git push
+            if($LASTEXITCODE){throw 'RC11 publishing failed'}
+          }
+      - name: Record successful compatibility result
+        shell: pwsh
+        run: |
+          $text='# RC11 Update Compatibility - Windows QA' + [Environment]::NewLine + [Environment]::NewLine + 'All checks completed successfully: PowerShell 5.1 syntax, Node logic and integration, legacy RC7/RC8/RC9/RC10 ZIP allowlists, package SHA256 and GitHub update feed. Real PC2 update still needs user confirmation.'
+          [IO.File]::WriteAllText((Join-Path $PWD RC11_COMPATIBILITY_QA.md),$text,[Text.UTF8Encoding]::new($false))
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add RC11_COMPATIBILITY_QA.md
+          if(-not (git diff --cached --quiet)){git commit -m 'Record RC11 cross-version Windows QA';git push}
