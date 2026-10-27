@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "payload": {
+    "schema": 1,
+    "channel": "electron-preview",
+    "version": "2.0.0-alpha.6",
+    "platform": "win32",
+    "arch": "x64",
+    "filename": "Instant_Downloader_2_Preview_2.0.0-alpha.6_win_x64.exe",
+    "size": 473447207,
+    "sha256": "40347e63deb02911f80531962bc69bf452e40e55f384b5eb9e17c188b497000a",
+    "downloadUrl": "https://github.com/Sankio9/instant-downloader-updates/releases/download/electron-v2.0.0-alpha.6/Instant_Downloader_2_Preview_2.0.0-alpha.6_win_x64.exe",
+    "notes": "Verified full Electron Preview update"
+  },
+  "signature": "cgrZkoFYUyqEaYog/lP/1h3wUVBmOl2v+qA7Q7ylGMFjnyNTx0btJUwwC1221pWx+qbQHSLiJHHyyvM9H07jBQ=="
+}
