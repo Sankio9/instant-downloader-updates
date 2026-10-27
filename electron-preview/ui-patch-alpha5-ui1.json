@@ -1,0 +1,1 @@
+{"schema":1,"version":"2.0.0-alpha.5-ui.1","baseVersion":"2.0.0-alpha.5","operations":[{"file":"index.html","find":"<small>2.0 alpha</small>","replace":"<small>2.0 alpha | UI update verified</small>"}]}
