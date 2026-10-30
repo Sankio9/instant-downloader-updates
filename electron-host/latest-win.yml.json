@@ -3,14 +3,14 @@
   "payload": {
     "schema": 1,
     "channel": "electron-preview",
-    "version": "2.0.0-alpha.28",
+    "version": "2.0.0-alpha.29",
     "platform": "win32",
     "arch": "x64",
-    "filename": "Instant_Downloader_2_Preview_2.0.0-alpha.28_win_x64.exe",
-    "size": 519851121,
-    "sha256": "6e8f24e1b46a50a9bac436e4691199f1c8a3ba01d0b6c8180354fff54957eb08",
-    "downloadUrl": "https://github.com/Sankio9/instant-downloader-updates/releases/download/electron-v2.0.0-alpha.28/Instant_Downloader_2_Preview_2.0.0-alpha.28_win_x64.exe",
+    "filename": "Instant_Downloader_2_Preview_2.0.0-alpha.29_win_x64.exe",
+    "size": 519852478,
+    "sha256": "2d2a2cef8f21835f5b5bc110af3313307dab153b3b56f1df1824f205d9322409",
+    "downloadUrl": "https://github.com/Sankio9/instant-downloader-updates/releases/download/electron-v2.0.0-alpha.29/Instant_Downloader_2_Preview_2.0.0-alpha.29_win_x64.exe",
     "notes": "Verified full Electron Preview update"
   },
-  "signature": "JUOiD/Fpleft3j+yROW5GiepxT7KWQp/HuvYVlto/pRaNnOHpSbAJpj4rT7+Fm0S5iOsNGS6DuNw6H2Ox63/DA=="
+  "signature": "E5iCkwZ7/j3Mtb9139Tf/29tRbgkAM4OMcUKJFjeGSYAzYwRDPi4ovSBvBq7t0XCRf+rWWImuaLMqhwCqdKNBA=="
 }
